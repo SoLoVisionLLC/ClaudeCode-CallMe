@@ -96,7 +96,19 @@ Claude won't call for simple yes/no questions.
 
 ## Self-Hosting
 
-Want to run your own Hey Boss server? See [server/README.md](server/README.md) for deployment instructions.
+Run your own server for free (no payments, just your Twilio/OpenAI costs):
+
+```bash
+# 1. Deploy the server (see server/README.md)
+export SELF_HOST_PHONE=+1234567890  # Your phone number
+# ... other env vars ...
+
+# 2. Point the plugin to your server
+export HEY_BOSS_URL=https://your-server.com
+export HEY_BOSS_API_KEY=self-host
+```
+
+See [server/README.md](server/README.md) for full deployment instructions.
 
 ## License
 
