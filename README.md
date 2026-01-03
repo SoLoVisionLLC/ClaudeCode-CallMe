@@ -23,9 +23,9 @@ Sign up at [heyboss.io](https://heyboss.io) to get your API key. You'll provide 
 
 ## Pricing
 
-**$0.16/minute** - billed per minute of call time.
+**$20/month** - includes 60 minutes of call time.
 
-No subscriptions, no minimums. Pay only for what you use.
+Simple subscription. Minutes reset each billing cycle.
 
 ## How It Works
 

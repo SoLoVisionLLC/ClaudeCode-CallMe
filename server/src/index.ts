@@ -12,9 +12,9 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { IncomingMessage, ServerResponse } from 'http';
 import { CallManager, loadServerConfig } from './phone-call.js';
-import { initDatabase, getUserUsage, recordUsage } from './database.js';
+import { initDatabase, recordUsage } from './database.js';
 import { initAuth, validateApiKey, isSelfHostMode } from './auth.js';
-import { loadPricingConfig, getPricePerMin, calculateCallCost } from './billing.js';
+import { loadBillingConfig, getMonthlyMinutes, getMinutesRemaining, hasMinutesRemaining } from './billing.js';
 import { initStripe, isStripeEnabled } from './stripe.js';
 import { handleWebRequest } from './web.js';
 
@@ -25,14 +25,16 @@ if (!process.env.SELF_HOST_PHONE) {
 }
 
 initAuth();
-loadPricingConfig();
+loadBillingConfig();
 
 // Initialize Stripe if configured
-if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET) {
+if (process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET && process.env.STRIPE_PRICE_ID) {
   initStripe({
     secretKey: process.env.STRIPE_SECRET_KEY,
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
-    pricePerDollar: parseInt(process.env.CREDITS_PER_DOLLAR || '100', 10),
+    priceId: process.env.STRIPE_PRICE_ID,
+    monthlyMinutes: getMonthlyMinutes(),
+    monthlyPriceCents: parseInt(process.env.MONTHLY_PRICE_CENTS || '2000', 10),
   });
 }
 
@@ -46,17 +48,22 @@ const mcpServer = new Server(
 );
 
 // Track authenticated user for current request
-let currentUser: { id: string; phoneNumber: string; balanceCents: number } | null = null;
+let currentUser: {
+  id: string;
+  phoneNumber: string;
+  subscriptionStatus: 'active' | 'cancelled' | 'none';
+  minutesUsed: number;
+} | null = null;
 
 // List available tools
 mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
-  const priceInfo = isSelfHostMode() ? '' : ` Costs ${getPricePerMin()}¢/min.`;
+  const subscriptionInfo = isSelfHostMode() ? '' : ' Uses your monthly minutes.';
 
   return {
     tools: [
       {
         name: 'initiate_call',
-        description: `Start a phone call with the user.${priceInfo} Use when you need voice input, want to report completed work, or need real-time discussion.`,
+        description: `Start a phone call with the user.${subscriptionInfo} Use when you need voice input, want to report completed work, or need real-time discussion.`,
         inputSchema: {
           type: 'object',
           properties: {
@@ -105,15 +112,27 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   }
 
-  // Check balance (skip in self-host mode)
-  if (!isSelfHostMode() && currentUser.balanceCents < getPricePerMin()) {
-    return {
-      content: [{
-        type: 'text',
-        text: 'Error: Insufficient balance. Please add credits at heyboss.io',
-      }],
-      isError: true,
-    };
+  // Check subscription (skip in self-host mode)
+  if (!isSelfHostMode()) {
+    if (currentUser.subscriptionStatus !== 'active') {
+      return {
+        content: [{
+          type: 'text',
+          text: 'Error: No active subscription. Please subscribe at heyboss.io',
+        }],
+        isError: true,
+      };
+    }
+
+    if (!hasMinutesRemaining(currentUser.minutesUsed)) {
+      return {
+        content: [{
+          type: 'text',
+          text: 'Error: Monthly minutes exhausted. Minutes reset at the start of your next billing period.',
+        }],
+        isError: true,
+      };
+    }
   }
 
   try {
@@ -144,14 +163,16 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // Record usage (skip in self-host mode)
       if (!isSelfHostMode()) {
-        const cost = calculateCallCost(durationSeconds);
-        recordUsage(currentUser.id, call_id, durationSeconds, cost);
+        recordUsage(currentUser.id, call_id, durationSeconds);
 
-        const usage = getUserUsage(currentUser.id);
+        const minutesUsed = Math.ceil(durationSeconds / 60);
+        const newTotalMinutes = currentUser.minutesUsed + minutesUsed;
+        const remaining = getMinutesRemaining(newTotalMinutes);
+
         return {
           content: [{
             type: 'text',
-            text: `Call ended. Duration: ${durationSeconds}s, Cost: ${cost}¢\n\nTotal usage: ${usage.totalCalls} calls, $${(usage.totalCostCents / 100).toFixed(2)}`,
+            text: `Call ended. Duration: ${durationSeconds}s (${minutesUsed} min)\n\n${remaining} minutes remaining this month.`,
           }],
         };
       }
@@ -251,7 +272,8 @@ function handleMcpRequest(req: IncomingMessage, res: ServerResponse): void {
   currentUser = {
     id: user.id,
     phoneNumber: user.phone_number,
-    balanceCents: user.balance_cents,
+    subscriptionStatus: user.subscription_status,
+    minutesUsed: user.minutes_used,
   };
 
   let body = '';
@@ -309,5 +331,4 @@ console.error('');
 console.error('Hey Boss server ready');
 console.error(`Mode: ${isSelfHostMode() ? 'Self-host' : 'SaaS'}`);
 console.error(`Stripe: ${isStripeEnabled() ? 'Enabled' : 'Disabled'}`);
-console.error(`Price: ${getPricePerMin()}¢/minute`);
 console.error('');

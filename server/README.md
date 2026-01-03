@@ -3,7 +3,7 @@
 The backend server for Hey Boss. Supports two modes:
 
 1. **Self-host mode**: Single user, no payments or database needed
-2. **SaaS mode**: Multi-user with Stripe payments and web registration
+2. **SaaS mode**: Multi-user with Stripe subscriptions and web registration
 
 ## Quick Start (Self-Host)
 
@@ -49,21 +49,35 @@ TWILIO_PHONE_NUMBER=+1234567890
 OPENAI_API_KEY=sk-xxxxx
 PUBLIC_URL=https://api.heyboss.io
 
-# Stripe
+# Stripe Subscription
 STRIPE_SECRET_KEY=sk_live_xxxxx
 STRIPE_WEBHOOK_SECRET=whsec_xxxxx
+STRIPE_PRICE_ID=price_xxxxx  # Your subscription price ID
 
-# Pricing (16¢/min with 2x markup)
-PRICE_MULTIPLIER=2.0
+# Plan: $20/month, 60 minutes
+MONTHLY_PRICE_CENTS=2000
+MONTHLY_MINUTES=60
 ```
 
-### 3. Stripe Webhook
+### 3. Create Stripe Subscription Product
+
+In Stripe Dashboard:
+1. Products → Create product
+2. Name: "Hey Boss Subscription"
+3. Add a recurring price: $20/month
+4. Copy the Price ID (starts with `price_`)
+
+### 4. Stripe Webhook
 
 In Stripe Dashboard → Webhooks:
 - URL: `https://api.heyboss.io/webhook`
-- Events: `checkout.session.completed`
+- Events:
+  - `customer.subscription.created`
+  - `customer.subscription.updated`
+  - `customer.subscription.deleted`
+  - `invoice.paid`
 
-### 4. Run
+### 5. Run
 
 ```bash
 bun run dev   # Development
@@ -75,8 +89,9 @@ bun run start # Production
 1. User visits `https://api.heyboss.io`
 2. Signs up with email + phone number
 3. Gets API key on dashboard
-4. Adds credits via Stripe ($5, $10, $25, $50)
-5. Uses API key with plugin
+4. Subscribes via Stripe ($20/month)
+5. Gets 60 minutes per month
+6. Uses API key with plugin
 
 ## Architecture
 
@@ -91,24 +106,17 @@ bun run start # Production
 │                          │                                  │
 │                          ▼                                  │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │ SQLite (users, usage) + Stripe (payments)           │   │
+│  │ SQLite (users, subscriptions) + Stripe (billing)    │   │
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Pricing
+## Subscription Management
 
-```bash
-# Your costs
-TWILIO_COST_PER_MIN=2   # 2¢
-WHISPER_COST_PER_MIN=1  # 1¢
-TTS_COST_PER_MIN=5      # 5¢
-
-# Your markup
-PRICE_MULTIPLIER=2.0    # 2x
-```
-
-**Result:** Base 8¢ × 2.0 = **16¢/min** to users
+- Minutes reset automatically when `invoice.paid` webhook fires
+- Cancelled subscriptions remain active until period end
+- Dashboard shows minutes used/remaining
+- Users can manage subscription via Stripe portal
 
 ## Endpoints
 
@@ -133,7 +141,9 @@ PRICE_MULTIPLIER=2.0    # 2x
 | `DATABASE_PATH` | SaaS | SQLite path |
 | `STRIPE_SECRET_KEY` | SaaS | Stripe key |
 | `STRIPE_WEBHOOK_SECRET` | SaaS | Webhook secret |
-| `PRICE_MULTIPLIER` | Both | Pricing markup |
+| `STRIPE_PRICE_ID` | SaaS | Subscription price ID |
+| `MONTHLY_PRICE_CENTS` | SaaS | Price in cents (2000 = $20) |
+| `MONTHLY_MINUTES` | SaaS | Minutes per month |
 
 ## Deployment
 

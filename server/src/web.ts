@@ -1,27 +1,13 @@
 /**
- * Web Pages for Signup and Dashboard
- *
- * Simple server-rendered HTML - no build step needed.
+ * Web Pages for Signup, Dashboard, and Subscription
  */
 
 import { IncomingMessage, ServerResponse } from 'http';
 import { parse as parseUrl } from 'url';
 import { parse as parseQuery } from 'querystring';
-import {
-  createUser,
-  getUserByEmail,
-  getUserByApiKey,
-  getUserUsage,
-  getRecentUsage,
-  User,
-} from './database.js';
-import {
-  isStripeEnabled,
-  createCheckoutSession,
-  getCreditPackages,
-  handleWebhook,
-} from './stripe.js';
-import { getPricePerMin } from './billing.js';
+import { createUser, getUserByEmail, getUserByApiKey, getUserUsage, User, updateUserPhone } from './database.js';
+import { isStripeEnabled, createSubscriptionCheckout, createBillingPortal, handleWebhook, getMonthlyMinutes, getMonthlyPriceCents } from './stripe.js';
+import { getMonthlyMinutes as getBillingMinutes, getMonthlyPriceCents as getBillingPrice } from './billing.js';
 
 const STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -38,20 +24,29 @@ const STYLES = `
   button:hover { background: #4338ca; }
   .secondary { background: #333; }
   .secondary:hover { background: #444; }
-  .api-key { font-family: monospace; background: #0a0a0a; padding: 16px; border-radius: 8px; word-break: break-all; border: 1px solid #333; }
-  .balance { font-size: 2rem; font-weight: bold; color: #22c55e; }
+  .api-key { font-family: monospace; background: #0a0a0a; padding: 16px; border-radius: 8px; word-break: break-all; border: 1px solid #333; font-size: 14px; }
+  .minutes { font-size: 3rem; font-weight: bold; }
+  .minutes.good { color: #22c55e; }
+  .minutes.low { color: #eab308; }
+  .minutes.empty { color: #ef4444; }
   .price { color: #888; font-size: 14px; }
   .error { background: #7f1d1d; border-color: #991b1b; padding: 12px; border-radius: 8px; margin-bottom: 16px; }
   .success { background: #14532d; border-color: #166534; padding: 12px; border-radius: 8px; margin-bottom: 16px; }
-  a { color: #4f46e5; }
-  .packages { display: grid; gap: 12px; }
-  .package { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: #0a0a0a; border-radius: 8px; border: 1px solid #333; }
-  .package.popular { border-color: #4f46e5; }
-  .usage-table { width: 100%; margin-top: 12px; }
-  .usage-table td { padding: 8px 0; border-bottom: 1px solid #333; }
+  .warning { background: #713f12; border-color: #854d0e; padding: 12px; border-radius: 8px; margin-bottom: 16px; }
+  a { color: #4f46e5; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: 500; }
+  .status.active { background: #14532d; color: #22c55e; }
+  .status.none { background: #333; color: #888; }
+  .status.cancelled { background: #7f1d1d; color: #ef4444; }
   .nav { display: flex; gap: 16px; margin-bottom: 24px; }
-  .nav a { color: #888; text-decoration: none; }
-  .nav a:hover, .nav a.active { color: #fff; }
+  .nav a { color: #888; }
+  .nav a:hover { color: #fff; }
+  .progress { background: #333; border-radius: 8px; height: 8px; margin-top: 8px; overflow: hidden; }
+  .progress-bar { background: #4f46e5; height: 100%; transition: width 0.3s; }
+  .plan-box { text-align: center; padding: 32px; }
+  .plan-price { font-size: 3rem; font-weight: bold; }
+  .plan-price span { font-size: 1rem; color: #888; }
 `;
 
 function html(title: string, content: string, user?: User): string {
@@ -78,16 +73,29 @@ function html(title: string, content: string, user?: User): string {
 </html>`;
 }
 
+function getMinutesConfig(): { price: number; minutes: number } {
+  if (isStripeEnabled()) {
+    return { price: getMonthlyPriceCents(), minutes: getMonthlyMinutes() };
+  }
+  return { price: getBillingPrice(), minutes: getBillingMinutes() };
+}
+
 function homePage(): string {
+  const { price, minutes } = getMinutesConfig();
+
   return html('Welcome', `
     <h1>Hey Boss</h1>
     <h2>Claude calls you when it needs your input</h2>
 
+    <div class="card plan-box">
+      <div class="plan-price">$${price / 100}<span>/month</span></div>
+      <p style="margin-top: 12px; color: #888;">${minutes} minutes of calls included</p>
+      <p style="margin-top: 24px;">Get phone calls from Claude Code when it finishes tasks, needs decisions, or wants to discuss next steps.</p>
+    </div>
+
     <div class="card">
-      <p style="margin-bottom: 16px;">Get phone calls from Claude Code when it finishes tasks, needs decisions, or wants to discuss next steps.</p>
-      <p class="price" style="margin-bottom: 24px;">Just ${getPricePerMin()}¢/minute. Pay only for what you use.</p>
       <a href="/signup"><button>Get Started</button></a>
-      <a href="/login" style="display: block; text-align: center; margin-top: 12px;">Already have an account? Login</a>
+      <a href="/login" style="display: block; text-align: center; margin-top: 12px; color: #888;">Already have an account? Login</a>
     </div>
   `);
 }
@@ -105,7 +113,7 @@ function signupPage(error?: string): string {
           <input type="email" name="email" required placeholder="you@example.com">
         </div>
         <div class="form-group">
-          <label>Phone Number</label>
+          <label>Phone Number (where Claude will call you)</label>
           <input type="tel" name="phone" required placeholder="+1234567890">
         </div>
         <button type="submit">Create Account</button>
@@ -139,51 +147,65 @@ function loginPage(error?: string): string {
 }
 
 function dashboardPage(user: User, message?: string): string {
+  const { minutes: monthlyMinutes } = getMinutesConfig();
+  const minutesRemaining = Math.max(0, monthlyMinutes - user.minutes_used);
+  const usagePercent = Math.min(100, (user.minutes_used / monthlyMinutes) * 100);
+
+  const minutesClass = minutesRemaining > 20 ? 'good' : minutesRemaining > 5 ? 'low' : 'empty';
+  const statusClass = user.subscription_status;
+
   const usage = getUserUsage(user.id);
-  const recentCalls = getRecentUsage(user.id, 5);
 
   return html('Dashboard', `
     <h1>Dashboard</h1>
-    <h2>Welcome back</h2>
 
     ${message ? `<div class="success">${message}</div>` : ''}
 
-    <div class="card">
-      <label>Your Balance</label>
-      <div class="balance">$${(user.balance_cents / 100).toFixed(2)}</div>
-      <p class="price">≈ ${Math.floor(user.balance_cents / getPricePerMin())} minutes of calls</p>
-    </div>
-
-    ${isStripeEnabled() ? `
-      <div class="card">
-        <label>Add Credits</label>
-        <div class="packages">
-          ${getCreditPackages().map(pkg => `
-            <form method="POST" action="/buy" style="margin: 0;">
-              <input type="hidden" name="amount" value="${pkg.dollars}">
-              <button type="submit" class="package ${pkg.popular ? 'popular' : ''}" style="width: 100%; text-align: left;">
-                <span>$${pkg.dollars}</span>
-                <span style="color: #888;">${pkg.credits}¢ credits</span>
-              </button>
-            </form>
-          `).join('')}
-        </div>
+    ${user.subscription_status !== 'active' ? `
+      <div class="warning">
+        You don't have an active subscription. <a href="/subscribe">Subscribe now</a> to start making calls.
       </div>
     ` : ''}
 
     <div class="card">
-      <label>Your API Key</label>
-      <div class="api-key">${user.api_key}</div>
-      <p class="price" style="margin-top: 12px;">Set this as HEY_BOSS_API_KEY in your environment</p>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <label style="margin: 0;">Subscription</label>
+        <span class="status ${statusClass}">${user.subscription_status === 'active' ? 'Active' : user.subscription_status === 'cancelled' ? 'Cancelled' : 'None'}</span>
+      </div>
+
+      ${user.subscription_status === 'active' ? `
+        <div class="minutes ${minutesClass}">${minutesRemaining}</div>
+        <p class="price">minutes remaining this month</p>
+        <div class="progress">
+          <div class="progress-bar" style="width: ${usagePercent}%"></div>
+        </div>
+        <p class="price" style="margin-top: 8px;">${user.minutes_used} of ${monthlyMinutes} minutes used</p>
+      ` : ''}
+
+      ${isStripeEnabled() ? `
+        <div style="margin-top: 20px;">
+          ${user.subscription_status === 'active' ? `
+            <form method="POST" action="/manage">
+              <button type="submit" class="secondary">Manage Subscription</button>
+            </form>
+          ` : `
+            <form method="POST" action="/subscribe">
+              <button type="submit">Subscribe - $${getMinutesConfig().price / 100}/month</button>
+            </form>
+          `}
+        </div>
+      ` : ''}
     </div>
 
     <div class="card">
-      <label>Usage Stats</label>
-      <table class="usage-table">
-        <tr><td>Total Calls</td><td style="text-align: right;">${usage.totalCalls}</td></tr>
-        <tr><td>Total Minutes</td><td style="text-align: right;">${usage.totalMinutes}</td></tr>
-        <tr><td>Total Spent</td><td style="text-align: right;">$${(usage.totalCostCents / 100).toFixed(2)}</td></tr>
-      </table>
+      <label>Your API Key</label>
+      <div class="api-key">${user.api_key}</div>
+      <p class="price" style="margin-top: 12px;">Set as HEY_BOSS_API_KEY in your environment</p>
+    </div>
+
+    <div class="card">
+      <label>All-Time Usage</label>
+      <p style="margin-top: 8px;">${usage.totalCalls} calls, ${usage.totalMinutes} minutes</p>
     </div>
   `, user);
 }
@@ -191,7 +213,6 @@ function dashboardPage(user: User, message?: string): string {
 function settingsPage(user: User, message?: string, error?: string): string {
   return html('Settings', `
     <h1>Settings</h1>
-    <h2>Manage your account</h2>
 
     ${message ? `<div class="success">${message}</div>` : ''}
     ${error ? `<div class="error">${error}</div>` : ''}
@@ -212,13 +233,13 @@ function settingsPage(user: User, message?: string, error?: string): string {
     </div>
 
     <div class="card">
-      <label>Your API Key</label>
+      <label>API Key</label>
       <div class="api-key">${user.api_key}</div>
     </div>
   `, user);
 }
 
-// Simple cookie-based session
+// Session handling
 function setSession(res: ServerResponse, apiKey: string): void {
   res.setHeader('Set-Cookie', `session=${apiKey}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800`);
 }
@@ -242,9 +263,7 @@ async function parseBody(req: IncomingMessage): Promise<Record<string, string>> 
   return new Promise((resolve) => {
     let body = '';
     req.on('data', (chunk) => { body += chunk; });
-    req.on('end', () => {
-      resolve(parseQuery(body) as Record<string, string>);
-    });
+    req.on('end', () => resolve(parseQuery(body) as Record<string, string>));
   });
 }
 
@@ -252,11 +271,10 @@ export async function handleWebRequest(req: IncomingMessage, res: ServerResponse
   const url = parseUrl(req.url || '/', true);
   const path = url.pathname || '/';
 
-  // Get current user from session
   const sessionKey = getSession(req);
   const currentUser = sessionKey ? getUserByApiKey(sessionKey) : null;
 
-  // Stripe webhook (no auth)
+  // Stripe webhook
   if (path === '/webhook' && req.method === 'POST') {
     let body = '';
     req.on('data', (chunk) => { body += chunk; });
@@ -315,7 +333,7 @@ export async function handleWebRequest(req: IncomingMessage, res: ServerResponse
       redirect(res, '/dashboard?welcome=1');
     } catch (err) {
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(signupPage('Failed to create account. Please try again.'));
+      res.end(signupPage('Failed to create account'));
     }
     return true;
   }
@@ -355,16 +373,17 @@ export async function handleWebRequest(req: IncomingMessage, res: ServerResponse
   }
 
   if (path === '/dashboard' && req.method === 'GET') {
-    const message = url.query.welcome === '1' ? 'Welcome! Your account has been created.' :
-                    url.query.success === '1' ? 'Credits added successfully!' : undefined;
+    const message = url.query.welcome === '1' ? 'Welcome! Subscribe to start making calls.' :
+                    url.query.subscribed === '1' ? 'Subscription activated!' : undefined;
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(dashboardPage(currentUser, message));
     return true;
   }
 
   if (path === '/settings' && req.method === 'GET') {
+    const message = url.query.updated === '1' ? 'Phone number updated' : undefined;
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(settingsPage(currentUser));
+    res.end(settingsPage(currentUser, message));
     return true;
   }
 
@@ -378,27 +397,17 @@ export async function handleWebRequest(req: IncomingMessage, res: ServerResponse
       return true;
     }
 
-    const { updateUserPhone } = await import('./database.js');
     updateUserPhone(currentUser.id, phone);
     redirect(res, '/settings?updated=1');
     return true;
   }
 
-  if (path === '/buy' && req.method === 'POST' && isStripeEnabled()) {
-    const body = await parseBody(req);
-    const amount = parseInt(body.amount || '0', 10);
-
-    if (amount < 5) {
-      redirect(res, '/dashboard');
-      return true;
-    }
-
+  if (path === '/subscribe' && req.method === 'POST' && isStripeEnabled()) {
     try {
       const baseUrl = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`;
-      const checkoutUrl = await createCheckoutSession(
+      const checkoutUrl = await createSubscriptionCheckout(
         currentUser.id,
-        amount,
-        `${baseUrl}/dashboard?success=1`,
+        `${baseUrl}/dashboard?subscribed=1`,
         `${baseUrl}/dashboard`
       );
       redirect(res, checkoutUrl);
@@ -409,5 +418,17 @@ export async function handleWebRequest(req: IncomingMessage, res: ServerResponse
     return true;
   }
 
-  return false; // Not a web request
+  if (path === '/manage' && req.method === 'POST' && isStripeEnabled()) {
+    try {
+      const baseUrl = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`;
+      const portalUrl = await createBillingPortal(currentUser.id, `${baseUrl}/dashboard`);
+      redirect(res, portalUrl);
+    } catch (err) {
+      console.error('Portal error:', err);
+      redirect(res, '/dashboard');
+    }
+    return true;
+  }
+
+  return false;
 }

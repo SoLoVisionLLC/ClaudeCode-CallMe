@@ -24,7 +24,11 @@ export function initAuth(): void {
       phone_number: selfHostPhone,
       api_key: selfHostKey,
       stripe_customer_id: null,
-      balance_cents: 999999999, // Unlimited
+      stripe_subscription_id: null,
+      subscription_status: 'active',  // Always active in self-host
+      period_start: null,
+      period_end: null,
+      minutes_used: 0,  // Unlimited in self-host mode
       created_at: new Date().toISOString(),
       enabled: true,
     };

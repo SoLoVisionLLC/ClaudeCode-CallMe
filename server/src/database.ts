@@ -1,8 +1,6 @@
 /**
  * SQLite Database for User Storage
- *
- * Uses better-sqlite3 for synchronous, simple database operations.
- * Falls back to in-memory if no DB path specified.
+ * Subscription-based model with monthly minutes
  */
 
 import Database from 'better-sqlite3';
@@ -14,7 +12,11 @@ export interface User {
   phone_number: string;
   api_key: string;
   stripe_customer_id: string | null;
-  balance_cents: number;
+  stripe_subscription_id: string | null;
+  subscription_status: 'active' | 'cancelled' | 'none';
+  period_start: string | null;
+  period_end: string | null;
+  minutes_used: number;
   created_at: string;
   enabled: boolean;
 }
@@ -24,7 +26,6 @@ export interface UsageRecord {
   user_id: string;
   call_id: string;
   duration_seconds: number;
-  cost_cents: number;
   created_at: string;
 }
 
@@ -33,7 +34,6 @@ let db: Database.Database;
 export function initDatabase(dbPath?: string): void {
   db = new Database(dbPath || ':memory:');
 
-  // Create tables
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -41,7 +41,11 @@ export function initDatabase(dbPath?: string): void {
       phone_number TEXT NOT NULL,
       api_key TEXT UNIQUE NOT NULL,
       stripe_customer_id TEXT,
-      balance_cents INTEGER DEFAULT 0,
+      stripe_subscription_id TEXT,
+      subscription_status TEXT DEFAULT 'none',
+      period_start TEXT,
+      period_end TEXT,
+      minutes_used INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       enabled INTEGER DEFAULT 1
     );
@@ -51,7 +55,6 @@ export function initDatabase(dbPath?: string): void {
       user_id TEXT NOT NULL,
       call_id TEXT NOT NULL,
       duration_seconds INTEGER NOT NULL,
-      cost_cents INTEGER NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
@@ -73,16 +76,16 @@ export function generateUserId(): string {
 }
 
 // User operations
-export function createUser(email: string, phoneNumber: string, stripeCustomerId?: string): User {
+export function createUser(email: string, phoneNumber: string): User {
   const id = generateUserId();
   const apiKey = generateApiKey();
 
   const stmt = db.prepare(`
-    INSERT INTO users (id, email, phone_number, api_key, stripe_customer_id)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO users (id, email, phone_number, api_key)
+    VALUES (?, ?, ?, ?)
   `);
 
-  stmt.run(id, email, phoneNumber, apiKey, stripeCustomerId || null);
+  stmt.run(id, email, phoneNumber, apiKey);
   return getUserById(id)!;
 }
 
@@ -110,32 +113,56 @@ export function getUserByStripeCustomerId(customerId: string): User | null {
   return row ? rowToUser(row) : null;
 }
 
-export function updateUserBalance(userId: string, balanceCents: number): void {
-  const stmt = db.prepare('UPDATE users SET balance_cents = ? WHERE id = ?');
-  stmt.run(balanceCents, userId);
-}
-
-export function addToUserBalance(userId: string, amountCents: number): number {
-  const user = getUserById(userId);
-  if (!user) throw new Error('User not found');
-
-  const newBalance = user.balance_cents + amountCents;
-  updateUserBalance(userId, newBalance);
-  return newBalance;
-}
-
-export function deductFromUserBalance(userId: string, amountCents: number): number {
-  const user = getUserById(userId);
-  if (!user) throw new Error('User not found');
-
-  const newBalance = user.balance_cents - amountCents;
-  updateUserBalance(userId, newBalance);
-  return newBalance;
+export function getUserByStripeSubscriptionId(subscriptionId: string): User | null {
+  const stmt = db.prepare('SELECT * FROM users WHERE stripe_subscription_id = ?');
+  const row = stmt.get(subscriptionId) as any;
+  return row ? rowToUser(row) : null;
 }
 
 export function updateUserStripeCustomerId(userId: string, customerId: string): void {
   const stmt = db.prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ?');
   stmt.run(customerId, userId);
+}
+
+export function updateUserSubscription(
+  userId: string,
+  subscriptionId: string,
+  status: 'active' | 'cancelled' | 'none',
+  periodStart: Date,
+  periodEnd: Date
+): void {
+  const stmt = db.prepare(`
+    UPDATE users SET
+      stripe_subscription_id = ?,
+      subscription_status = ?,
+      period_start = ?,
+      period_end = ?,
+      minutes_used = 0
+    WHERE id = ?
+  `);
+  stmt.run(subscriptionId, status, periodStart.toISOString(), periodEnd.toISOString(), userId);
+}
+
+export function cancelUserSubscription(userId: string): void {
+  const stmt = db.prepare(`UPDATE users SET subscription_status = 'cancelled' WHERE id = ?`);
+  stmt.run(userId);
+}
+
+export function resetUserMinutes(userId: string, periodStart: Date, periodEnd: Date): void {
+  const stmt = db.prepare(`
+    UPDATE users SET minutes_used = 0, period_start = ?, period_end = ? WHERE id = ?
+  `);
+  stmt.run(periodStart.toISOString(), periodEnd.toISOString(), userId);
+}
+
+export function addMinutesUsed(userId: string, minutes: number): number {
+  const user = getUserById(userId);
+  if (!user) throw new Error('User not found');
+
+  const newMinutes = user.minutes_used + minutes;
+  const stmt = db.prepare('UPDATE users SET minutes_used = ? WHERE id = ?');
+  stmt.run(newMinutes, userId);
+  return newMinutes;
 }
 
 export function updateUserPhone(userId: string, phoneNumber: string): void {
@@ -148,30 +175,24 @@ export function setUserEnabled(userId: string, enabled: boolean): void {
   stmt.run(enabled ? 1 : 0, userId);
 }
 
-export function getAllUsers(): User[] {
-  const stmt = db.prepare('SELECT * FROM users ORDER BY created_at DESC');
-  const rows = stmt.all() as any[];
-  return rows.map(rowToUser);
-}
-
 // Usage operations
-export function recordUsage(userId: string, callId: string, durationSeconds: number, costCents: number): void {
+export function recordUsage(userId: string, callId: string, durationSeconds: number): void {
   const stmt = db.prepare(`
-    INSERT INTO usage (user_id, call_id, duration_seconds, cost_cents)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO usage (user_id, call_id, duration_seconds)
+    VALUES (?, ?, ?)
   `);
-  stmt.run(userId, callId, durationSeconds, costCents);
+  stmt.run(userId, callId, durationSeconds);
 
-  // Deduct from balance
-  deductFromUserBalance(userId, costCents);
+  // Add to minutes used (round up)
+  const minutes = Math.ceil(durationSeconds / 60);
+  addMinutesUsed(userId, minutes);
 }
 
-export function getUserUsage(userId: string): { totalCalls: number; totalMinutes: number; totalCostCents: number } {
+export function getUserUsage(userId: string): { totalCalls: number; totalMinutes: number } {
   const stmt = db.prepare(`
     SELECT
       COUNT(*) as total_calls,
-      COALESCE(SUM(duration_seconds), 0) as total_seconds,
-      COALESCE(SUM(cost_cents), 0) as total_cost
+      COALESCE(SUM(duration_seconds), 0) as total_seconds
     FROM usage WHERE user_id = ?
   `);
   const row = stmt.get(userId) as any;
@@ -179,15 +200,23 @@ export function getUserUsage(userId: string): { totalCalls: number; totalMinutes
   return {
     totalCalls: row.total_calls,
     totalMinutes: Math.ceil(row.total_seconds / 60),
-    totalCostCents: row.total_cost,
   };
 }
 
-export function getRecentUsage(userId: string, limit = 10): UsageRecord[] {
+export function getMonthlyUsage(userId: string, periodStart: string): { calls: number; minutes: number } {
   const stmt = db.prepare(`
-    SELECT * FROM usage WHERE user_id = ? ORDER BY created_at DESC LIMIT ?
+    SELECT
+      COUNT(*) as calls,
+      COALESCE(SUM(duration_seconds), 0) as seconds
+    FROM usage
+    WHERE user_id = ? AND created_at >= ?
   `);
-  return stmt.all(userId, limit) as UsageRecord[];
+  const row = stmt.get(userId, periodStart) as any;
+
+  return {
+    calls: row.calls,
+    minutes: Math.ceil(row.seconds / 60),
+  };
 }
 
 function rowToUser(row: any): User {
@@ -197,7 +226,11 @@ function rowToUser(row: any): User {
     phone_number: row.phone_number,
     api_key: row.api_key,
     stripe_customer_id: row.stripe_customer_id,
-    balance_cents: row.balance_cents,
+    stripe_subscription_id: row.stripe_subscription_id,
+    subscription_status: row.subscription_status || 'none',
+    period_start: row.period_start,
+    period_end: row.period_end,
+    minutes_used: row.minutes_used || 0,
     created_at: row.created_at,
     enabled: Boolean(row.enabled),
   };
