@@ -1,0 +1,26 @@
+{
+  "name": "@hey-boss/mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for phone call input in Claude Code",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "hey-boss-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node --format esm",
+    "dev": "bun --watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "twilio": "^5.3.5",
+    "openai": "^4.77.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/ws": "^8.5.13",
+    "bun-types": "latest"
+  }
+}

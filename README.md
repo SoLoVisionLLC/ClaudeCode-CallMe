@@ -1,308 +1,441 @@
 # Hey Boss 📞
 
-Production-ready phone call input tool for Claude Code. When Claude needs your input, it calls you on the phone, explains what it needs, listens to your response, asks clarifying questions, and continues working with your guidance.
+**MCP Plugin for Claude Code** - Enables Claude to call you on the phone when it needs your input, clarification, or decisions.
+
+When Claude is working on a task and needs real-time input, it can invoke the `call_user_for_input` tool to initiate a phone call, explain what it needs, listen to your response, ask clarifying questions, and continue working with your guidance.
 
 ## Features
 
-- **Phone-Based Input**: Claude calls you when it needs clarification or decisions
-- **Natural Conversation**: Uses OpenAI's Realtime API for natural voice interaction
-- **Smart Questioning**: Asks follow-up questions to get complete answers
-- **Production Ready**: Built with Twilio for reliable phone calls
-- **Simple Integration**: Easy-to-use CLI tool and hook system
-- **KISS Principle**: Clean, maintainable code without over-engineering
+- **Claude-Invoked Tool**: Shows up in Claude Code's available tools
+- **Natural Voice Conversation**: Uses OpenAI's Realtime API for seamless voice interaction
+- **Smart Questioning**: AI asks follow-up questions to get complete answers
+- **Production Ready**: Built with Twilio for reliable telecommunications
+- **MCP Standard**: Follows Model Context Protocol for easy integration
+- **Auto-Discovery**: Includes skill definition so Claude knows when to use it
 
-## Prerequisites
-
-1. **Bun** - Fast JavaScript runtime
-   ```bash
-   curl -fsSL https://bun.sh/install | bash
-   ```
-
-2. **Twilio Account** - For phone calls
-   - Sign up at [twilio.com](https://www.twilio.com/try-twilio)
-   - Get a phone number with voice capabilities
-   - Note your Account SID and Auth Token
-
-3. **OpenAI Account** - For voice conversation
-   - Sign up at [platform.openai.com](https://platform.openai.com)
-   - Create an API key
-   - Ensure you have access to GPT-4 Realtime API
-
-4. **Public URL** - For webhooks
-   - For production: Use your domain with HTTPS
-   - For development: Use [ngrok](https://ngrok.com)
-     ```bash
-     ngrok http 3000
-     ```
-
-## Installation
-
-1. Clone and install:
-   ```bash
-   git clone <repository-url>
-   cd hey-boss
-   bun install
-   ```
-
-2. Configure environment:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
-   ```
-
-3. Set up your `.env` file:
-   ```env
-   TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   TWILIO_AUTH_TOKEN=your_auth_token_here
-   TWILIO_PHONE_NUMBER=+1234567890
-   USER_PHONE_NUMBER=+1234567890
-   OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   PUBLIC_URL=https://your-domain.com
-   PORT=3000
-   ```
-
-4. Make the CLI globally available (optional):
-   ```bash
-   bun link
-   ```
-
-## Usage
-
-### Direct CLI Usage
+## Quick Start
 
 ```bash
-# Basic usage
-bun run src/cli.ts "Should I proceed with refactoring the auth module?"
+# Clone and install
+git clone https://github.com/ZeframLou/hey-boss.git
+cd hey-boss
+./install.sh
 
-# Or if globally linked
-hey-boss "Which API endpoint should I use for user data?"
+# Configure your credentials
+nano .env
+
+# Start ngrok for development
+ngrok http 3000  # Copy the HTTPS URL to .env as PUBLIC_URL
 ```
 
-### From Claude Code
-
-Claude Code can invoke this tool directly:
-
-```bash
-# In a Bash tool call from Claude Code
-hey-boss "I need to choose between REST and GraphQL. What's your preference?"
-```
-
-### As a Hook
-
-Configure Claude Code to call you when tasks complete:
-
-1. Create a Claude Code hook configuration (check Claude Code docs for hook setup)
-2. Point to `hook/claude-finish-hook.sh`
-3. Claude will automatically call you when it finishes tasks
-
-Example hook configuration:
-```bash
-# In your Claude Code hooks config
-on_finish: /path/to/hey-boss/hook/claude-finish-hook.sh
-```
+Then add to Claude Code's MCP settings (see [Installation](#installation) below).
 
 ## How It Works
 
-1. **You invoke the tool** with a question or context
-2. **Server starts** and creates a Twilio call to your phone
-3. **Call connects** to OpenAI Realtime API for voice conversation
-4. **AI explains** what Claude Code needs
-5. **You respond** naturally by speaking
-6. **AI asks** clarifying questions if needed
-7. **Call ends** when AI has a complete answer
-8. **Response returns** to Claude Code to continue working
+```
+┌─────────────────┐
+│  Claude Code    │  "I need to decide between PostgreSQL and MongoDB..."
+└────────┬────────┘
+         │ Invokes tool: call_user_for_input
+         ▼
+┌─────────────────┐
+│  Hey Boss MCP   │  Initiates call
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐      ┌──────────────┐
+│     Twilio      │─────►│  Your Phone  │  Ring ring!
+└────────┬────────┘      └──────┬───────┘
+         │                       │
+         │    WebSocket          │  You: "Use PostgreSQL, we already
+         │◄──────────────────────┤       have it set up..."
+         ▼                       │
+┌─────────────────┐              │  AI: "Got it, I'll relay that
+│  OpenAI Voice   │              │       to Claude. Thank you!"
+│   (Realtime)    │              │
+└─────────────────┘              │  Call ends
+         │                       │
+         │  Transcript           │
+         ▼                       │
+┌─────────────────┐              │
+│  Claude Code    │  Continues with: "Proceeding with PostgreSQL..."
+└─────────────────┘
+```
 
-## Architecture
+**Claude decides when to call you** based on the skill definition - you don't manually invoke anything.
+
+## Prerequisites
+
+### 1. Bun Runtime
+```bash
+curl -fsSL https://bun.sh/install | bash
+```
+
+### 2. Twilio Account (for phone calls)
+1. Sign up at [twilio.com/try-twilio](https://www.twilio.com/try-twilio)
+2. Get a phone number with **voice capabilities**
+3. Note your **Account SID** and **Auth Token** from the console
+
+### 3. OpenAI Account (for voice AI)
+1. Sign up at [platform.openai.com](https://platform.openai.com)
+2. Create an **API key**
+3. Ensure access to **GPT-4 Realtime API** (check your usage limits)
+
+### 4. Public URL (for webhooks)
+- **Production**: Use your domain with HTTPS
+- **Development**: Use [ngrok](https://ngrok.com)
+  ```bash
+  ngrok http 3000
+  # Copy the HTTPS URL (e.g., https://abc123.ngrok.io)
+  ```
+
+## Installation
+
+### Step 1: Install the Plugin
+
+```bash
+git clone https://github.com/ZeframLou/hey-boss.git
+cd hey-boss
+./install.sh
+```
+
+### Step 2: Configure Credentials
+
+Edit `.env` with your credentials:
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+```.env
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_PHONE_NUMBER=+1234567890          # Your Twilio number
+USER_PHONE_NUMBER=+1234567890            # Your personal number
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+PUBLIC_URL=https://your-ngrok-url.ngrok.io  # Or your production domain
+PORT=3000
+```
+
+### Step 3: Add to Claude Code
+
+Add the MCP server to your Claude Code configuration.
+
+**Find your Claude Code config:**
+- macOS: `~/.claude/settings.json`
+- Linux: `~/.config/claude/settings.json`
+- Windows: `%APPDATA%\Claude\settings.json`
+
+**Add this to your `mcpServers` section:**
+
+```json
+{
+  "mcpServers": {
+    "hey-boss": {
+      "command": "node",
+      "args": ["/absolute/path/to/hey-boss/mcp-server/dist/index.js"],
+      "env": {
+        "TWILIO_ACCOUNT_SID": "ACxxxxx...",
+        "TWILIO_AUTH_TOKEN": "your_token",
+        "TWILIO_PHONE_NUMBER": "+1234567890",
+        "USER_PHONE_NUMBER": "+1234567890",
+        "OPENAI_API_KEY": "sk-xxxxx...",
+        "PUBLIC_URL": "https://your-ngrok-url.ngrok.io",
+        "PORT": "3000"
+      }
+    }
+  }
+}
+```
+
+**Or use the Claude Code CLI:**
+
+```bash
+# Get the absolute path first
+PLUGIN_PATH=$(cd /path/to/hey-boss && pwd)
+
+# Add the MCP server
+claude mcp add hey-boss \
+  --transport stdio \
+  --command node \
+  --args "$PLUGIN_PATH/mcp-server/dist/index.js"
+```
+
+### Step 4: Restart Claude Code
+
+Restart Claude Code to load the new MCP server. The `call_user_for_input` tool will now be available.
+
+## Usage
+
+### Automatic Invocation (Recommended)
+
+Claude Code will **automatically** invoke the phone call tool when it determines it needs your input based on the skill definition in `skills/phone-input/SKILL.md`.
+
+Examples of when Claude might call:
+- "I need to decide between PostgreSQL and MongoDB for this feature"
+- "Should I proceed with dropping this database table?"
+- "The API documentation is unclear - which endpoint should I use?"
+
+### Manual Invocation (For Testing)
+
+You can also explicitly ask Claude to call you:
 
 ```
-┌─────────────┐
-│ Claude Code │
-└──────┬──────┘
-       │ invokes
-       ▼
-┌─────────────┐
-│   CLI Tool  │
-└──────┬──────┘
-       │ starts
-       ▼
-┌─────────────┐      ┌──────────┐
-│   Server    │◄────►│  Twilio  │
-└──────┬──────┘      └────┬─────┘
-       │                   │
-       │ WebSocket         │ Phone Call
-       │                   │
-       ▼                   ▼
-┌─────────────┐      ┌──────────┐
-│   OpenAI    │      │   You    │
-│  Realtime   │      │          │
-└─────────────┘      └──────────┘
+User: "Call me to discuss the authentication approach"
+Claude: *invokes call_user_for_input tool*
+```
+
+### What Happens During a Call
+
+1. **Your phone rings** (from your Twilio number)
+2. **AI voice greets you**: "Hello, I'm calling on behalf of Claude Code..."
+3. **AI explains the question**: "Claude needs to know whether to use PostgreSQL or MongoDB..."
+4. **You respond** naturally by speaking
+5. **AI asks clarifying questions** if needed
+6. **AI confirms**: "Thank you, I'll relay this to Claude"
+7. **Call ends** and Claude receives the full transcript
+
+## Project Structure
+
+```
+hey-boss/
+├── .claude-plugin/
+│   └── plugin.json              # Plugin manifest for Claude Code
+├── mcp-server/                  # MCP server implementation
+│   ├── src/
+│   │   ├── index.ts             # MCP server entry point
+│   │   └── phone-call.ts        # Phone call implementation
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── dist/                    # Built output (created by install.sh)
+├── skills/
+│   └── phone-input/
+│       └── SKILL.md             # Skill definition (when to use this tool)
+├── .env.example                 # Environment template
+├── .env                         # Your credentials (git-ignored)
+├── install.sh                   # Installation script
+└── README.md
 ```
 
 ## Development
 
-### Project Structure
-
-```
-hey-boss/
-├── src/
-│   ├── cli.ts           # CLI entry point
-│   ├── config.ts        # Configuration management
-│   ├── phone-service.ts # Twilio integration
-│   └── voice-handler.ts # OpenAI Realtime API handler
-├── hook/
-│   └── claude-finish-hook.sh  # Post-task completion hook
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
-### Running in Development
-
-1. Start ngrok (in a separate terminal):
-   ```bash
-   ngrok http 3000
-   ```
-
-2. Update `.env` with ngrok URL:
-   ```env
-   PUBLIC_URL=https://abc123.ngrok.io
-   ```
-
-3. Run the tool:
-   ```bash
-   bun run src/cli.ts "Test question"
-   ```
-
-### Testing
-
-Test the complete flow:
+### Building the MCP Server
 
 ```bash
-# Test with a simple question
-bun run src/cli.ts "What's your favorite color?"
-
-# Expected flow:
-# 1. You receive a phone call
-# 2. AI asks the question
-# 3. You answer
-# 4. AI thanks you and ends call
-# 5. Your response prints to console
+cd mcp-server
+bun install
+bun run build
 ```
 
-## Production Deployment
+### Testing the Tool
 
-### Option 1: VPS Deployment
+```bash
+# Start ngrok
+ngrok http 3000
 
-1. Set up a server with:
-   - Bun installed
-   - Domain with SSL certificate
-   - Firewall allowing inbound on your chosen port
+# Update .env with the ngrok URL
+PUBLIC_URL=https://abc123.ngrok.io
 
-2. Configure environment:
-   ```bash
-   cp .env.example .env
-   # Edit with production values
-   ```
+# Test the MCP server directly
+cd mcp-server
+node dist/index.js
+# (This will start the MCP server in stdio mode)
+```
 
-3. Run as a service (systemd example):
-   ```ini
-   [Unit]
-   Description=Hey Boss Phone Service
-   After=network.target
+### Testing from Claude Code
 
-   [Service]
-   Type=simple
-   User=youruser
-   WorkingDirectory=/path/to/hey-boss
-   ExecStart=/usr/local/bin/bun run src/cli.ts
-   Restart=on-failure
-   EnvironmentFile=/path/to/hey-boss/.env
+Ask Claude to invoke the tool:
 
-   [Install]
-   WantedBy=multi-user.target
-   ```
+```
+User: "Test the phone call tool by calling me about what color the submit button should be"
+Claude: *invokes call_user_for_input with the question*
+```
 
-### Option 2: Serverless (Vercel/Netlify)
+## Available Tool
 
-The tool is designed to run as a short-lived process. For serverless:
+Once installed, Claude Code will have access to:
 
-1. Deploy to a function platform that supports WebSockets
-2. Ensure function timeout is at least 2 minutes
-3. Configure environment variables in platform settings
+### `call_user_for_input`
+
+**Description:** Call the user on the phone to get input, clarification, or decision.
+
+**Parameters:**
+- `question` (string, required): What Claude needs to communicate
+- `urgency` (string, optional): "normal" or "high" (default: "normal")
+
+**Returns:**
+- Transcript of the user's response
+- Call duration
+- Call status (completed/failed/timeout)
+
+**Example:**
+```typescript
+const result = await call_user_for_input({
+  question: "Should I use REST or GraphQL for the new API? REST is simpler but GraphQL gives more flexibility.",
+  urgency: "normal"
+});
+
+// Result:
+// {
+//   transcript: "Use REST for now. We can migrate to GraphQL later if needed...",
+//   duration: 45,
+//   status: "completed"
+// }
+```
+
+## Skill Auto-Invocation
+
+The included skill definition (`skills/phone-input/SKILL.md`) teaches Claude **when** to use this tool:
+
+**Use when:**
+- Complex decisions requiring explanation
+- Time-sensitive questions
+- Blocking issues that need immediate input
+- Situations where text is insufficient
+
+**Don't use when:**
+- Simple yes/no questions
+- Non-urgent clarifications
+- Information already provided
+
+Claude will make the judgment call based on context.
 
 ## Troubleshooting
 
-### Call Not Connecting
+### "Failed to complete phone call"
 
-- Verify Twilio credentials are correct
-- Check that TWILIO_PHONE_NUMBER is valid and has voice capability
-- Ensure USER_PHONE_NUMBER is in E.164 format (+1234567890)
-- Verify PUBLIC_URL is reachable from internet
+**Check:**
+1. Is ngrok running and URL in .env matches?
+2. Are Twilio credentials correct?
+3. Is Twilio phone number verified and has voice capability?
+4. Is OpenAI API key valid and has Realtime API access?
+5. Check Claude Code logs: `~/.claude/logs/mcp-hey-boss.log`
 
-### No Audio
+### Call connects but no audio
 
-- Check OpenAI API key is valid
-- Verify you have access to GPT-4 Realtime API
-- Check OpenAI account has sufficient credits
+**Check:**
+1. OpenAI API key is valid
+2. You have credits in OpenAI account
+3. Check OpenAI dashboard for errors
 
-### WebSocket Errors
+### Claude doesn't invoke the tool
 
-- Ensure PUBLIC_URL uses HTTPS (required by Twilio in production)
-- For ngrok, verify tunnel is running and URL matches .env
-- Check firewall allows inbound connections on specified port
+**Check:**
+1. MCP server is loaded (check Claude Code settings)
+2. Restart Claude Code after adding the server
+3. The tool should appear in Claude's available tools list
+4. Try explicitly asking: "Call me to discuss X"
 
-### Permission Errors
+### Permission denied on install.sh
 
 ```bash
-# Make hook script executable
-chmod +x hook/claude-finish-hook.sh
+chmod +x install.sh
+./install.sh
 ```
 
-## Security Considerations
+## Security Best Practices
 
-- **Never commit `.env`** - Contains sensitive credentials
-- **Use HTTPS in production** - Required for secure WebSocket connections
-- **Rotate API keys** - Regularly rotate Twilio and OpenAI keys
-- **Limit phone numbers** - Consider validating calls are only to/from expected numbers
-- **Monitor usage** - Watch Twilio and OpenAI usage to prevent abuse
+1. **Never commit `.env`** - Contains sensitive credentials
+2. **Use environment variables** - Don't hardcode credentials
+3. **HTTPS required** - Twilio requires HTTPS webhooks in production
+4. **Rotate keys regularly** - Especially if exposed
+5. **Monitor usage** - Check Twilio and OpenAI dashboards for unexpected usage
+6. **Validate phone numbers** - Only allow calls to expected numbers
 
 ## Cost Estimates
 
-- **Twilio**: ~$0.01-0.02 per minute for calls
-- **OpenAI Realtime API**: ~$0.06 per minute for audio input, ~$0.24 per minute for audio output
-- **Total**: ~$0.30-0.40 per minute of conversation
+**Per call:**
+- Twilio: ~$0.01-0.02 per minute
+- OpenAI Realtime API: ~$0.06/min (input) + ~$0.24/min (output)
+- **Total: ~$0.30-0.40 per minute**
 
-A typical 2-minute call costs approximately $0.60-0.80.
+**Typical 2-minute call: $0.60-0.80**
+
+Monitor usage in:
+- Twilio Console: [console.twilio.com](https://console.twilio.com)
+- OpenAI Dashboard: [platform.openai.com/usage](https://platform.openai.com/usage)
+
+## Production Deployment
+
+### Recommended Setup
+
+1. **Deploy to a VPS** with:
+   - Node.js 18+ installed
+   - Domain with SSL certificate
+   - Firewall configured for port 3000
+
+2. **Configure systemd service:**
+
+```ini
+# /etc/systemd/system/hey-boss.service
+[Unit]
+Description=Hey Boss MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=youruser
+WorkingDirectory=/opt/hey-boss
+ExecStart=/usr/bin/node /opt/hey-boss/mcp-server/dist/index.js
+Restart=on-failure
+EnvironmentFile=/opt/hey-boss/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+3. **Start and enable:**
+
+```bash
+sudo systemctl enable hey-boss
+sudo systemctl start hey-boss
+sudo systemctl status hey-boss
+```
+
+### Using a Process Manager
+
+```bash
+# With PM2
+pm2 start mcp-server/dist/index.js --name hey-boss
+pm2 save
+pm2 startup
+```
 
 ## Environment Variables Reference
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `TWILIO_ACCOUNT_SID` | Twilio account identifier | `ACxxxxx...` |
-| `TWILIO_AUTH_TOKEN` | Twilio authentication token | `your_token` |
-| `TWILIO_PHONE_NUMBER` | Your Twilio phone number | `+1234567890` |
-| `USER_PHONE_NUMBER` | Your personal phone number | `+1234567890` |
-| `OPENAI_API_KEY` | OpenAI API key | `sk-xxxxx...` |
-| `PUBLIC_URL` | Public server URL (HTTPS) | `https://example.com` |
-| `PORT` | Server port (optional) | `3000` |
-
-## License
-
-MIT
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `TWILIO_ACCOUNT_SID` | Yes | Twilio account ID | `ACxxxxx...` |
+| `TWILIO_AUTH_TOKEN` | Yes | Twilio auth token | `your_token` |
+| `TWILIO_PHONE_NUMBER` | Yes | Your Twilio number | `+1234567890` |
+| `USER_PHONE_NUMBER` | Yes | Your personal number | `+1234567890` |
+| `OPENAI_API_KEY` | Yes | OpenAI API key | `sk-xxxxx...` |
+| `PUBLIC_URL` | Yes | Public HTTPS URL | `https://example.com` |
+| `PORT` | No | Server port (default: 3000) | `3000` |
 
 ## Contributing
 
 Contributions welcome! Please:
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch (`git checkout -b feature/amazing`)
 3. Make your changes
-4. Submit a pull request
+4. Test with Claude Code
+5. Submit a pull request
+
+## License
+
+MIT
 
 ## Support
 
-For issues or questions:
+- **Issues**: [github.com/ZeframLou/hey-boss/issues](https://github.com/ZeframLou/hey-boss/issues)
+- **Discussions**: [github.com/ZeframLou/hey-boss/discussions](https://github.com/ZeframLou/hey-boss/discussions)
+- **Twilio Docs**: [twilio.com/docs](https://www.twilio.com/docs)
+- **OpenAI Realtime API**: [platform.openai.com/docs](https://platform.openai.com/docs)
+- **MCP Documentation**: [modelcontextprotocol.io](https://modelcontextprotocol.io)
 
-1. Check the Troubleshooting section
-2. Review Twilio and OpenAI documentation
-3. Open an issue on GitHub
+---
+
+**Made with ❤️ for the Claude Code community**
