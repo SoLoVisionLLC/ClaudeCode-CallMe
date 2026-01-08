@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
+    "prestart": "bun install --silent",
     "start": "bun run src/index.ts",
     "dev": "bun --watch src/index.ts"
   },
