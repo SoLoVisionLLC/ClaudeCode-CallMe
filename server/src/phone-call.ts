@@ -558,7 +558,7 @@ export class CallManager {
     console.error(`[TTS] Generating audio for: ${text.substring(0, 50)}...`);
     const tts = this.config.providers.tts;
     const pcmData = await tts.synthesize(text);
-    const resampledPcm = this.resample24kTo8k(pcmData);
+    const resampledPcm = this.resampleTo8k(pcmData, tts.sampleRate);
     const muLawData = this.pcmToMuLaw(resampledPcm);
     console.error(`[TTS] Audio generated: ${muLawData.length} bytes`);
     return muLawData;
@@ -580,14 +580,26 @@ export class CallManager {
   }
 
   private async sendPreGeneratedAudio(state: CallState, muLawData: Buffer): Promise<void> {
-    console.error(`[${state.callId}] Sending pre-generated audio...`);
-    const chunkSize = 160;  // 20ms at 8kHz
+    console.error(`[${state.callId}] Sending pre-generated audio (${muLawData.length} bytes)...`);
+
+    // Try sending larger chunks for smoother playback
+    // Telnyx accepts chunks from 20ms to 30 seconds
+    const chunkSize = 4000;  // 500ms at 8kHz mu-law (1 byte per sample)
+    const delayMs = 450;     // Slightly less than chunk duration to prevent gaps
+
     for (let i = 0; i < muLawData.length; i += chunkSize) {
-      this.sendMediaChunk(state, muLawData.subarray(i, i + chunkSize));
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      const chunk = muLawData.subarray(i, Math.min(i + chunkSize, muLawData.length));
+      this.sendMediaChunk(state, chunk);
+
+      // Only delay if there's more audio to send
+      if (i + chunkSize < muLawData.length) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
     }
-    // Small delay to ensure audio finishes playing before listening
-    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // Wait for the last chunk to finish playing
+    const lastChunkDuration = Math.min(chunkSize, muLawData.length % chunkSize || chunkSize) / 8;
+    await new Promise((resolve) => setTimeout(resolve, lastChunkDuration + 200));
     console.error(`[${state.callId}] Audio sent`);
   }
 
@@ -620,14 +632,14 @@ export class CallManager {
   ): Promise<void> {
     let pendingPcm = Buffer.alloc(0);
     let pendingMuLaw = Buffer.alloc(0);
-    const OUTPUT_CHUNK_SIZE = 160; // 20ms at 8kHz
-    const SAMPLES_PER_RESAMPLE = 6; // 6 bytes (3 samples) at 24kHz -> 1 sample at 8kHz
+    const OUTPUT_CHUNK_SIZE = 4000; // 500ms at 8kHz mu-law (larger chunks for smooth playback)
+    const inputSampleRate = this.config.providers.tts.sampleRate;
+    // Calculate bytes needed per output sample (2 bytes per sample * ratio)
+    const ratio = inputSampleRate / 8000;
+    const BYTES_PER_OUTPUT_SAMPLE = Math.ceil(ratio) * 2;
 
-    // Jitter buffer: accumulate audio before starting playback to smooth out
-    // timing variations from network latency and burst delivery patterns
-    const JITTER_BUFFER_MS = 100; // Buffer 100ms of audio before starting
-    // 8000 samples/sec ÷ 1000 ms/sec = 8 samples per ms; mu-law is 1 byte per sample
-    const JITTER_BUFFER_SIZE = (8000 / 1000) * JITTER_BUFFER_MS; // 800 bytes at 8kHz mu-law
+    // Buffer 500ms of audio before starting playback for smooth delivery
+    const JITTER_BUFFER_SIZE = 4000; // 500ms at 8kHz mu-law
     let playbackStarted = false;
 
     // Helper to drain and send buffered mu-law audio in chunks
@@ -635,20 +647,21 @@ export class CallManager {
       while (pendingMuLaw.length >= OUTPUT_CHUNK_SIZE) {
         this.sendMediaChunk(state, pendingMuLaw.subarray(0, OUTPUT_CHUNK_SIZE));
         pendingMuLaw = pendingMuLaw.subarray(OUTPUT_CHUNK_SIZE);
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        // Wait slightly less than chunk duration to prevent gaps
+        await new Promise((resolve) => setTimeout(resolve, 450));
       }
     };
 
     for await (const chunk of synthesizeStream(text)) {
       pendingPcm = Buffer.concat([pendingPcm, chunk]);
 
-      const completeUnits = Math.floor(pendingPcm.length / SAMPLES_PER_RESAMPLE);
+      const completeUnits = Math.floor(pendingPcm.length / BYTES_PER_OUTPUT_SAMPLE);
       if (completeUnits > 0) {
-        const bytesToProcess = completeUnits * SAMPLES_PER_RESAMPLE;
+        const bytesToProcess = completeUnits * BYTES_PER_OUTPUT_SAMPLE;
         const toProcess = pendingPcm.subarray(0, bytesToProcess);
         pendingPcm = pendingPcm.subarray(bytesToProcess);
 
-        const resampled = this.resample24kTo8k(toProcess);
+        const resampled = this.resampleTo8k(toProcess, inputSampleRate);
         const muLaw = this.pcmToMuLaw(resampled);
         pendingMuLaw = Buffer.concat([pendingMuLaw, muLaw]);
 
@@ -672,13 +685,17 @@ export class CallManager {
   }
 
   private async sendAudio(state: CallState, pcmData: Buffer): Promise<void> {
-    const resampledPcm = this.resample24kTo8k(pcmData);
+    const resampledPcm = this.resampleTo8k(pcmData, this.config.providers.tts.sampleRate);
     const muLawData = this.pcmToMuLaw(resampledPcm);
 
-    const chunkSize = 160;
+    // Use larger chunks for smooth playback
+    const chunkSize = 4000;  // 500ms at 8kHz
     for (let i = 0; i < muLawData.length; i += chunkSize) {
-      this.sendMediaChunk(state, muLawData.subarray(i, i + chunkSize));
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      const chunk = muLawData.subarray(i, Math.min(i + chunkSize, muLawData.length));
+      this.sendMediaChunk(state, chunk);
+      if (i + chunkSize < muLawData.length) {
+        await new Promise((resolve) => setTimeout(resolve, 450));
+      }
     }
   }
 
@@ -723,20 +740,27 @@ export class CallManager {
     });
   }
 
-  private resample24kTo8k(pcmData: Buffer): Buffer {
+  /**
+   * Resample PCM audio from input sample rate to 8kHz for telephony
+   * Uses linear interpolation for smooth resampling
+   */
+  private resampleTo8k(pcmData: Buffer, inputSampleRate: number): Buffer {
+    const outputSampleRate = 8000;
     const inputSamples = pcmData.length / 2;
-    const outputSamples = Math.floor(inputSamples / 3);
+    const ratio = inputSampleRate / outputSampleRate;
+    const outputSamples = Math.floor(inputSamples / ratio);
     const output = Buffer.alloc(outputSamples * 2);
 
     for (let i = 0; i < outputSamples; i++) {
-      // Use linear interpolation instead of point-sampling to reduce artifacts
-      // For each output sample, average the 3 surrounding input samples
-      // This acts as a simple anti-aliasing low-pass filter
-      const baseIdx = i * 3;
-      const s0 = pcmData.readInt16LE(baseIdx * 2);
-      const s1 = baseIdx + 1 < inputSamples ? pcmData.readInt16LE((baseIdx + 1) * 2) : s0;
-      const s2 = baseIdx + 2 < inputSamples ? pcmData.readInt16LE((baseIdx + 2) * 2) : s1;
-      const interpolated = Math.round((s0 + s1 + s2) / 3);
+      // Calculate the position in the input buffer
+      const srcPos = i * ratio;
+      const srcIndex = Math.floor(srcPos);
+      const frac = srcPos - srcIndex;
+
+      // Linear interpolation between two samples
+      const s0 = srcIndex < inputSamples ? pcmData.readInt16LE(srcIndex * 2) : 0;
+      const s1 = srcIndex + 1 < inputSamples ? pcmData.readInt16LE((srcIndex + 1) * 2) : s0;
+      const interpolated = Math.round(s0 + frac * (s1 - s0));
       output.writeInt16LE(interpolated, i * 2);
     }
 

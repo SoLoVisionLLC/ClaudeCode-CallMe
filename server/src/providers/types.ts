@@ -111,6 +111,7 @@ export interface STTConfig {
  */
 export interface TTSProvider {
   readonly name: string;
+  readonly sampleRate: number;  // Output sample rate in Hz
 
   /**
    * Initialize the provider
@@ -119,7 +120,7 @@ export interface TTSProvider {
 
   /**
    * Convert text to speech
-   * @returns PCM audio buffer (16-bit, mono, 24kHz)
+   * @returns PCM audio buffer (16-bit, mono, at provider's sampleRate)
    */
   synthesize(text: string): Promise<Buffer>;
 
@@ -134,6 +135,7 @@ export interface TTSConfig {
   apiUrl?: string;
   voice?: string;
   model?: string;
+  sampleRate?: number;  // Output sample rate (default: 24000 for OpenAI, may vary for others)
 }
 
 /**

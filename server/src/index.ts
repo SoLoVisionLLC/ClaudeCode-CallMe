@@ -42,39 +42,6 @@ async function main() {
   const callManager = new CallManager(serverConfig);
   callManager.startServer();
 
-  // Add test endpoint for direct call testing
-  const httpServer = callManager.getHttpServer();
-  if (httpServer) {
-    const originalListeners = httpServer.listeners('request');
-    httpServer.removeAllListeners('request');
-    httpServer.on('request', (req, res) => {
-      const url = new URL(req.url!, `http://${req.headers.host}`);
-      if (url.pathname === '/test-call' && req.method === 'POST') {
-        let body = '';
-        req.on('data', (chunk) => { body += chunk; });
-        req.on('end', async () => {
-          try {
-            const { message } = JSON.parse(body || '{}');
-            const testMessage = message || 'Hello! This is a test call from the CallMe server.';
-            console.error(`[Test] Initiating call with message: ${testMessage}`);
-            const result = await callManager.initiateCall(testMessage);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, callId: result.callId, response: result.response }));
-          } catch (error) {
-            console.error('[Test] Call failed:', error);
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, error: String(error) }));
-          }
-        });
-        return;
-      }
-      // Pass to original handlers
-      for (const listener of originalListeners) {
-        (listener as Function).call(httpServer, req, res);
-      }
-    });
-  }
-
   // Create stdio MCP server
   const mcpServer = new Server(
     { name: 'callme', version: '3.0.0' },

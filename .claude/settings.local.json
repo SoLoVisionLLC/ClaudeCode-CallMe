@@ -16,7 +16,10 @@
       "Bash(CALLME_PHONE_ACCOUNT_SID=2874457449216083245 echo:*)",
       "Bash(unset:*)",
       "WebFetch(domain:www.lemonfox.ai)",
-      "WebFetch(domain:developers.deepgram.com)"
+      "WebFetch(domain:developers.deepgram.com)",
+      "WebFetch(domain:developers.telnyx.com)",
+      "WebFetch(domain:telnyx.com)",
+      "WebFetch(domain:community.openai.com)"
     ]
   }
 }

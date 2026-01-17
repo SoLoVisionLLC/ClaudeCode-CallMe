@@ -39,6 +39,7 @@ export interface ProviderConfig {
   ttsVoice?: string;
   ttsApiKey?: string;  // Optional separate API key for TTS (e.g., LemonFox)
   ttsBaseUrl?: string; // Optional base URL for TTS (e.g., https://api.lemonfox.ai/v1)
+  ttsSampleRate?: number; // TTS output sample rate (default: 24000)
 
   // STT configuration
   sttProvider: STTProviderType;
@@ -72,6 +73,7 @@ export function loadProviderConfig(): ProviderConfig {
     ttsVoice: process.env.CALLME_TTS_VOICE || 'onyx',
     ttsApiKey: process.env.CALLME_TTS_API_KEY,
     ttsBaseUrl: process.env.CALLME_TTS_BASE_URL,
+    ttsSampleRate: process.env.CALLME_TTS_SAMPLE_RATE ? parseInt(process.env.CALLME_TTS_SAMPLE_RATE, 10) : undefined,
     sttProvider,
     sttApiKey: process.env.CALLME_STT_API_KEY,
     sttModel: process.env.CALLME_STT_MODEL || defaultSttModel,
@@ -103,6 +105,7 @@ export function createTTSProvider(config: ProviderConfig): TTSProvider {
     apiKey: config.ttsApiKey || config.openaiApiKey,
     apiUrl: config.ttsBaseUrl,
     voice: config.ttsVoice,
+    sampleRate: config.ttsSampleRate,
   });
   return provider;
 }
