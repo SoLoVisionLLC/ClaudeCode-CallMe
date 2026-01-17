@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun run start)",
+      "Bash(claude mcp add callme -- bun run --cwd \"C:\\\\Users\\\\SoLo\\\\Sandbox\\\\call-me\\\\server\" start)",
+      "mcp__callme__initiate_call",
+      "Bash(claude mcp:*)",
+      "Bash(copy \"C:\\\\Users\\\\SoLo\\\\Sandbox\\\\call-me\\\\.env\" \"C:\\\\Users\\\\SoLo\\\\Sandbox\\\\call-me\\\\server\\\\.env\")",
+      "Bash(ngrok config add-authtoken:*)",
+      "Bash(curl:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)",
+      "Bash(ngrok config:*)",
+      "WebSearch",
+      "Bash(bun run:*)",
+      "Bash(CALLME_PHONE_ACCOUNT_SID=2874457449216083245 echo:*)",
+      "Bash(unset:*)",
+      "WebFetch(domain:www.lemonfox.ai)",
+      "WebFetch(domain:developers.deepgram.com)"
+    ]
+  }
+}

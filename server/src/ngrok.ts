@@ -39,6 +39,8 @@ async function doStartNgrok(port: number): Promise<string> {
     authtoken,
     // Use custom domain if configured (paid ngrok feature)
     domain: process.env.CALLME_NGROK_DOMAIN || undefined,
+    // Enable pooling to allow reconnection if previous session is stale
+    pooling: 'pool',
   });
 
   const url = listener.url();

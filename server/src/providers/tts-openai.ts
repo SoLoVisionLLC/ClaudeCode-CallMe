@@ -1,31 +1,43 @@
 /**
- * OpenAI TTS Provider
+ * OpenAI-compatible TTS Provider
  *
- * Cloud-based TTS, no self-hosting required.
- * More expensive than self-hosted alternatives but zero setup.
+ * Supports OpenAI and compatible APIs like LemonFox.
+ * Configure CALLME_TTS_BASE_URL to use alternative providers.
  *
- * Pricing: ~$15/1M characters
+ * Pricing:
+ * - OpenAI: ~$15/1M characters
+ * - LemonFox: ~$2.50/1M characters
  */
 
 import OpenAI from 'openai';
 import type { TTSProvider, TTSConfig } from './types.js';
 
 export class OpenAITTSProvider implements TTSProvider {
-  readonly name = 'openai';
+  private _name = 'openai';
+  get name() { return this._name; }
   private client: OpenAI | null = null;
   private voice: string = 'onyx';
   private model: string = 'tts-1';
 
   initialize(config: TTSConfig): void {
     if (!config.apiKey) {
-      throw new Error('OpenAI API key required for TTS');
+      throw new Error('API key required for TTS');
     }
 
-    this.client = new OpenAI({ apiKey: config.apiKey });
+    const baseURL = config.apiUrl;
+    this.client = new OpenAI({
+      apiKey: config.apiKey,
+      ...(baseURL && { baseURL }),
+    });
     this.voice = config.voice || 'onyx';
     this.model = config.model || 'tts-1';
 
-    console.error(`TTS provider: OpenAI (${this.model}, voice: ${this.voice})`);
+    // Detect provider name from base URL
+    if (baseURL?.includes('lemonfox')) {
+      this._name = 'lemonfox';
+    }
+
+    console.error(`TTS provider: ${this._name} (${this.model}, voice: ${this.voice})`);
   }
 
   async synthesize(text: string): Promise<Buffer> {
