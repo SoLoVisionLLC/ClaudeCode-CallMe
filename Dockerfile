@@ -4,11 +4,11 @@ FROM oven/bun:1 AS base
 WORKDIR /app
 
 # Install dependencies
-COPY package.json bun.lock* ./
+COPY server/package.json server/bun.lock* ./
 RUN bun install --frozen-lockfile --production
 
 # Copy source
-COPY src ./src
+COPY server/src ./src
 
 # Default port (Coolify sets PORT env var)
 ENV PORT=3333

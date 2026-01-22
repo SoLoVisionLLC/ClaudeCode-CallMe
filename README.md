@@ -235,7 +235,7 @@ Instead of running locally with ngrok, you can deploy the server to the cloud fo
 ### 1. Deploy to Coolify
 
 1. Create a new service in Coolify pointing to this repo
-2. Set the **Dockerfile path** to `server/Dockerfile`
+2. The **Dockerfile** is in the repo root (default location)
 3. Configure environment variables:
 
 ```env
