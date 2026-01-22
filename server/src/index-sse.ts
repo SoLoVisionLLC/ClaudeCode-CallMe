@@ -203,12 +203,22 @@ async function main() {
       let body = '';
       req.on('data', (chunk) => { body += chunk; });
       req.on('end', () => {
+        let requestData: any = {};
+        try {
+          requestData = JSON.parse(body);
+        } catch {}
+
         const clientId = crypto.randomUUID();
         res.writeHead(201, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           client_id: clientId,
           client_id_issued_at: Math.floor(Date.now() / 1000),
           token_endpoint_auth_method: 'none',
+          grant_types: ['authorization_code'],
+          response_types: ['code'],
+          redirect_uris: requestData.redirect_uris || [],
+          client_name: requestData.client_name || 'Claude Code',
+          scope: requestData.scope || '',
         }));
       });
       return;
