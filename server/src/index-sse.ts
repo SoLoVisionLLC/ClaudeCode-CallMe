@@ -263,9 +263,14 @@ async function main() {
     if (url.pathname === '/sse' && req.method === 'GET') {
       console.error('[MCP] New SSE connection');
 
-      const transport = new SSEServerTransport('/messages', res);
-      const sessionId = crypto.randomUUID();
+      // Use full URL for endpoint so Claude Code knows where to POST
+      const messagesEndpoint = `${publicUrl}/messages`;
+      const transport = new SSEServerTransport(messagesEndpoint, res);
+
+      // Get the sessionId from the transport (it generates one internally)
+      const sessionId = (transport as any).sessionId || (transport as any)._sessionId || crypto.randomUUID();
       activeTransports.set(sessionId, transport);
+      console.error(`[MCP] Session ID: ${sessionId}`);
 
       const mcpServer = createMcpServer(callManager);
 
