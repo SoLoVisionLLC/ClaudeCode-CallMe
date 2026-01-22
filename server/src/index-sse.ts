@@ -1,26 +1,28 @@
 #!/usr/bin/env bun
 
 /**
- * CallMe MCP Server - SSE Transport (for cloud deployment)
+ * CallMe MCP Server - HTTP Transport (for cloud deployment)
  *
  * Single unified HTTP server that handles:
- * - /sse         → MCP SSE connection (Claude Code)
- * - /messages    → MCP message posting
- * - /twiml       → Phone provider webhooks (Twilio/Telnyx)
- * - /media-stream → WebSocket for real-time audio
- * - /health      → Health check
+ * - /mcp          -> MCP Streamable HTTP (newer protocol 2025-11-25)
+ * - /sse          -> MCP SSE connection (legacy protocol 2024-11-05)
+ * - /messages     -> MCP message posting (for SSE)
+ * - /twiml        -> Phone provider webhooks (Twilio/Telnyx)
+ * - /media-stream -> WebSocket for real-time audio
+ * - /health       -> Health check
  *
  * Designed for deployment on Coolify, Railway, or similar platforms.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { CallManager, loadServerConfig, type ServerConfig } from './phone-call.js';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 
-// Store active SSE transports
-const activeTransports = new Map<string, SSEServerTransport>();
+// Store active transports by session ID
+const transports = new Map<string, SSEServerTransport | StreamableHTTPServerTransport>();
 
 function createMcpServer(callManager: CallManager): Server {
   const mcpServer = new Server(
@@ -160,12 +162,22 @@ async function main() {
   const callManager = new CallManager(serverConfig);
 
   console.error('');
-  console.error('CallMe MCP server (SSE mode) starting...');
+  console.error('CallMe MCP server (HTTP mode) starting...');
   console.error(`Public URL: ${publicUrl}`);
   console.error(`Port: ${port}`);
   console.error(`Phone: ${serverConfig.phoneNumber} -> ${serverConfig.userPhoneNumber}`);
   console.error(`Providers: phone=${serverConfig.providers.phone.name}, tts=${serverConfig.providers.tts.name}, stt=${serverConfig.providers.stt.name}`);
   console.error('');
+
+  // Helper to read request body
+  const readBody = (req: IncomingMessage): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => resolve(body));
+      req.on('error', reject);
+    });
+  };
 
   // Create unified HTTP server
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -173,9 +185,9 @@ async function main() {
 
     // CORS headers for all requests
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, Mcp-Session-Id');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Authorization, Mcp-Session-Id');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -201,27 +213,22 @@ async function main() {
 
     // OAuth dynamic client registration (RFC 7591)
     if (url.pathname === '/oauth/register' && req.method === 'POST') {
-      let body = '';
-      req.on('data', (chunk) => { body += chunk; });
-      req.on('end', () => {
-        let requestData: any = {};
-        try {
-          requestData = JSON.parse(body);
-        } catch {}
+      const body = await readBody(req);
+      let requestData: any = {};
+      try { requestData = JSON.parse(body); } catch {}
 
-        const clientId = crypto.randomUUID();
-        res.writeHead(201, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          client_id: clientId,
-          client_id_issued_at: Math.floor(Date.now() / 1000),
-          token_endpoint_auth_method: 'none',
-          grant_types: ['authorization_code'],
-          response_types: ['code'],
-          redirect_uris: requestData.redirect_uris || [],
-          client_name: requestData.client_name || 'Claude Code',
-          scope: requestData.scope || '',
-        }));
-      });
+      const clientId = crypto.randomUUID();
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        client_id: clientId,
+        client_id_issued_at: Math.floor(Date.now() / 1000),
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+        redirect_uris: requestData.redirect_uris || [],
+        client_name: requestData.client_name || 'Claude Code',
+        scope: requestData.scope || '',
+      }));
       return;
     }
 
@@ -246,85 +253,130 @@ async function main() {
 
     // OAuth token endpoint - return access token
     if (url.pathname === '/oauth/token' && req.method === 'POST') {
-      let body = '';
-      req.on('data', (chunk) => { body += chunk; });
-      req.on('end', () => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          access_token: crypto.randomUUID(),
-          token_type: 'Bearer',
-          expires_in: 86400,
-        }));
-      });
+      await readBody(req); // consume body
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        access_token: crypto.randomUUID(),
+        token_type: 'Bearer',
+        expires_in: 86400,
+      }));
       return;
     }
 
-    // SSE endpoint - Claude Code connects here
-    if (url.pathname === '/sse' && req.method === 'GET') {
-      console.error('[MCP] New SSE connection');
-
-      // Use full URL for endpoint so Claude Code knows where to POST
-      const messagesEndpoint = `${publicUrl}/messages`;
-      const transport = new SSEServerTransport(messagesEndpoint, res);
-
-      // Use the transport's sessionId (public property in SDK 1.10+)
-      const sessionId = transport.sessionId;
-      activeTransports.set(sessionId, transport);
-      console.error(`[MCP] Session ID: ${sessionId}`);
-
-      const mcpServer = createMcpServer(callManager);
-
-      res.on('close', () => {
-        console.error('[MCP] SSE connection closed');
-        activeTransports.delete(sessionId);
-        mcpServer.close().catch(console.error);
-      });
+    //=========================================================================
+    // STREAMABLE HTTP TRANSPORT (Protocol 2025-11-25) - NEW
+    //=========================================================================
+    if (url.pathname === '/mcp') {
+      console.error(`[MCP] ${req.method} /mcp`);
 
       try {
-        await mcpServer.connect(transport);
-        console.error('[MCP] Server connected');
+        const sessionId = req.headers['mcp-session-id'] as string | undefined;
+        let transport: StreamableHTTPServerTransport | undefined;
+
+        // Check for existing session
+        if (sessionId) {
+          const existing = transports.get(sessionId);
+          if (existing instanceof StreamableHTTPServerTransport) {
+            transport = existing;
+            console.error(`[MCP] Reusing session: ${sessionId}`);
+          }
+        }
+
+        // For new sessions (POST with initialize request)
+        if (!transport && req.method === 'POST') {
+          const body = await readBody(req);
+          const parsed = body ? JSON.parse(body) : undefined;
+
+          if (isInitializeRequest(parsed)) {
+            console.error('[MCP] New Streamable HTTP session');
+            transport = new StreamableHTTPServerTransport({
+              sessionIdGenerator: () => crypto.randomUUID(),
+              onsessioninitialized: (sid) => {
+                console.error(`[MCP] Session initialized: ${sid}`);
+                transports.set(sid, transport!);
+              }
+            });
+
+            transport.onclose = () => {
+              const sid = transport!.sessionId;
+              if (sid) {
+                console.error(`[MCP] Session closed: ${sid}`);
+                transports.delete(sid);
+              }
+            };
+
+            const mcpServer = createMcpServer(callManager);
+            await mcpServer.connect(transport);
+          }
+
+          if (transport) {
+            await transport.handleRequest(req, res, parsed);
+            return;
+          }
+        }
+
+        // Handle other requests with existing transport
+        if (transport) {
+          const body = req.method === 'POST' ? await readBody(req) : undefined;
+          const parsed = body ? JSON.parse(body) : undefined;
+          await transport.handleRequest(req, res, parsed);
+          return;
+        }
+
+        // No valid session
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          jsonrpc: '2.0',
+          error: { code: -32000, message: 'Bad Request: No valid session' },
+          id: null
+        }));
       } catch (error) {
-        console.error('[MCP] Connection error:', error);
-        activeTransports.delete(sessionId);
+        console.error('[MCP] Error:', error);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32603, message: 'Internal server error' },
+            id: null
+          }));
+        }
       }
       return;
     }
 
-    // Messages endpoint - receives POST requests from Claude Code
-    if (url.pathname === '/messages' && req.method === 'POST') {
-      console.error(`[MCP] POST /messages received, sessionId param: ${url.searchParams.get('sessionId')}`);
-      console.error(`[MCP] Active transports: ${activeTransports.size}`);
+    //=========================================================================
+    // SSE TRANSPORT (Protocol 2024-11-05) - LEGACY/DEPRECATED
+    //=========================================================================
+    if (url.pathname === '/sse' && req.method === 'GET') {
+      console.error('[MCP] New SSE connection (legacy)');
 
-      let body = '';
-      req.on('data', (chunk) => { body += chunk; });
-      req.on('end', async () => {
-        console.error(`[MCP] Message body: ${body.substring(0, 200)}...`);
-        try {
-          const sessionId = url.searchParams.get('sessionId');
-          let transport = sessionId ? activeTransports.get(sessionId) : undefined;
+      const transport = new SSEServerTransport('/messages', res);
+      transports.set(transport.sessionId, transport);
+      console.error(`[MCP] SSE Session: ${transport.sessionId}`);
 
-          if (!transport) {
-            console.error(`[MCP] Session ${sessionId} not found, using fallback`);
-            // Fallback to most recent transport
-            const transports = Array.from(activeTransports.values());
-            transport = transports[transports.length - 1];
-          }
-
-          if (transport) {
-            console.error('[MCP] Handling message with transport');
-            await transport.handlePostMessage(req, res, body);
-            console.error('[MCP] Message handled successfully');
-          } else {
-            console.error('[MCP] No transport available!');
-            res.writeHead(503, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'No active SSE session' }));
-          }
-        } catch (error) {
-          console.error('[MCP] Message error:', error);
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Internal error' }));
-        }
+      res.on('close', () => {
+        console.error(`[MCP] SSE closed: ${transport.sessionId}`);
+        transports.delete(transport.sessionId);
       });
+
+      const mcpServer = createMcpServer(callManager);
+      await mcpServer.connect(transport);
+      return;
+    }
+
+    // SSE messages endpoint
+    if (url.pathname === '/messages' && req.method === 'POST') {
+      const sessionId = url.searchParams.get('sessionId');
+      console.error(`[MCP] POST /messages, session: ${sessionId}`);
+
+      const existing = sessionId ? transports.get(sessionId) : undefined;
+      if (existing instanceof SSEServerTransport) {
+        const body = await readBody(req);
+        await existing.handlePostMessage(req, res, body);
+      } else {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid or missing session' }));
+      }
       return;
     }
 
@@ -346,9 +398,10 @@ async function main() {
     console.error(`Server listening on port ${port}`);
     console.error('');
     console.error('Endpoints:');
-    console.error(`  ${publicUrl}/sse         → MCP SSE (Claude Code)`);
-    console.error(`  ${publicUrl}/twiml       → Phone webhooks`);
-    console.error(`  ${publicUrl}/health      → Health check`);
+    console.error(`  ${publicUrl}/mcp          -> MCP Streamable HTTP (new)`);
+    console.error(`  ${publicUrl}/sse          -> MCP SSE (legacy)`);
+    console.error(`  ${publicUrl}/twiml        -> Phone webhooks`);
+    console.error(`  ${publicUrl}/health       -> Health check`);
     console.error('');
     console.error('Connect Claude Code with:');
     console.error(`  claude mcp add -s user --transport sse callme ${publicUrl}/sse`);
@@ -356,9 +409,17 @@ async function main() {
   });
 
   // Graceful shutdown
-  const shutdown = () => {
+  const shutdown = async () => {
     console.error('\nShutting down...');
     callManager.shutdown();
+    for (const [sid, transport] of transports) {
+      try {
+        await transport.close();
+      } catch (e) {
+        console.error(`Error closing session ${sid}:`, e);
+      }
+    }
+    transports.clear();
     httpServer.close();
     process.exit(0);
   };
