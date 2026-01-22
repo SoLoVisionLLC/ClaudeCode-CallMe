@@ -195,8 +195,8 @@ async function main() {
       return;
     }
 
-    // OAuth metadata endpoint (for MCP SSE auth)
-    if (url.pathname === '/.well-known/oauth-authorization-server') {
+    // OAuth metadata endpoint (for MCP SSE auth) - DISABLED FOR TESTING
+    if (false && url.pathname === '/.well-known/oauth-authorization-server') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         issuer: publicUrl,
