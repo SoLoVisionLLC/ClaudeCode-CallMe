@@ -182,6 +182,54 @@ async function main() {
       return;
     }
 
+    // OAuth metadata endpoint (for MCP SSE auth)
+    if (url.pathname === '/.well-known/oauth-authorization-server') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        issuer: publicUrl,
+        authorization_endpoint: `${publicUrl}/oauth/authorize`,
+        token_endpoint: `${publicUrl}/oauth/token`,
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code'],
+        code_challenge_methods_supported: ['S256'],
+      }));
+      return;
+    }
+
+    // OAuth authorize endpoint - auto-approve and redirect
+    if (url.pathname === '/oauth/authorize') {
+      const redirectUri = url.searchParams.get('redirect_uri');
+      const state = url.searchParams.get('state');
+      const code = crypto.randomUUID();
+
+      if (redirectUri) {
+        const redirectUrl = new URL(redirectUri);
+        redirectUrl.searchParams.set('code', code);
+        if (state) redirectUrl.searchParams.set('state', state);
+        res.writeHead(302, { Location: redirectUrl.toString() });
+        res.end();
+      } else {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'missing redirect_uri' }));
+      }
+      return;
+    }
+
+    // OAuth token endpoint - return access token
+    if (url.pathname === '/oauth/token' && req.method === 'POST') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          access_token: crypto.randomUUID(),
+          token_type: 'Bearer',
+          expires_in: 86400,
+        }));
+      });
+      return;
+    }
+
     // SSE endpoint - Claude Code connects here
     if (url.pathname === '/sse' && req.method === 'GET') {
       console.error('[MCP] New SSE connection');
