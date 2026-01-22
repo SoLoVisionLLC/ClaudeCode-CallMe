@@ -189,10 +189,28 @@ async function main() {
         issuer: publicUrl,
         authorization_endpoint: `${publicUrl}/oauth/authorize`,
         token_endpoint: `${publicUrl}/oauth/token`,
+        registration_endpoint: `${publicUrl}/oauth/register`,
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code'],
         code_challenge_methods_supported: ['S256'],
+        token_endpoint_auth_methods_supported: ['none'],
       }));
+      return;
+    }
+
+    // OAuth dynamic client registration (RFC 7591)
+    if (url.pathname === '/oauth/register' && req.method === 'POST') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        const clientId = crypto.randomUUID();
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          client_id: clientId,
+          client_id_issued_at: Math.floor(Date.now() / 1000),
+          token_endpoint_auth_method: 'none',
+        }));
+      });
       return;
     }
 
