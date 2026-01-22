@@ -80,28 +80,57 @@ export class CallManager {
     this.config = config;
   }
 
+  /**
+   * Start the server with its own HTTP server (for local/ngrok mode)
+   */
   startServer(): void {
     this.httpServer = createServer((req, res) => {
-      const url = new URL(req.url!, `http://${req.headers.host}`);
-
-      if (url.pathname === '/twiml') {
-        this.handlePhoneWebhook(req, res);
-        return;
-      }
-
-      if (url.pathname === '/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', activeCalls: this.activeCalls.size }));
-        return;
-      }
-
-      res.writeHead(404);
-      res.end('Not Found');
+      this.handleHttpRequest(req, res);
     });
 
+    this.setupWebSocket(this.httpServer);
+
+    this.httpServer.listen(this.config.port, () => {
+      console.error(`HTTP server listening on port ${this.config.port}`);
+    });
+  }
+
+  /**
+   * Attach to an external HTTP server (for cloud/SSE mode)
+   * Returns a request handler for phone-related routes
+   */
+  attachToServer(httpServer: ReturnType<typeof createServer>): void {
+    this.httpServer = httpServer;
+    this.setupWebSocket(httpServer);
+  }
+
+  /**
+   * Handle HTTP request - can be called from external server
+   */
+  handleHttpRequest(req: IncomingMessage, res: ServerResponse): boolean {
+    const url = new URL(req.url!, `http://${req.headers.host}`);
+
+    if (url.pathname === '/twiml') {
+      this.handlePhoneWebhook(req, res);
+      return true;
+    }
+
+    if (url.pathname === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', activeCalls: this.activeCalls.size }));
+      return true;
+    }
+
+    return false; // Not handled
+  }
+
+  /**
+   * Set up WebSocket server for media streams
+   */
+  private setupWebSocket(httpServer: ReturnType<typeof createServer>): void {
     this.wss = new WebSocketServer({ noServer: true });
 
-    this.httpServer.on('upgrade', (request: IncomingMessage, socket: any, head: Buffer) => {
+    httpServer.on('upgrade', (request: IncomingMessage, socket: any, head: Buffer) => {
       const url = new URL(request.url!, `http://${request.headers.host}`);
       if (url.pathname === '/media-stream') {
         // Try to find the call ID from token
@@ -197,10 +226,6 @@ export class CallManager {
       ws.on('close', () => {
         console.error('Media stream WebSocket closed');
       });
-    });
-
-    this.httpServer.listen(this.config.port, () => {
-      console.error(`HTTP server listening on port ${this.config.port}`);
     });
   }
 

@@ -242,39 +242,50 @@ Instead of running locally with ngrok, you can deploy the server to the cloud fo
 # Required: Your deployment URL
 CALLME_PUBLIC_URL=https://callme.yourdomain.com
 
-# Phone provider (same as local setup)
-CALLME_PHONE_PROVIDER=telnyx
+# Phone provider (Telnyx)
 CALLME_PHONE_ACCOUNT_SID=<your-connection-id>
 CALLME_PHONE_AUTH_TOKEN=<your-api-key>
 CALLME_PHONE_NUMBER=+15551234567
 CALLME_USER_PHONE_NUMBER=+15559876543
 
-# TTS/STT providers
-CALLME_TTS_PROVIDER=openai
-OPENAI_API_KEY=sk-...
-CALLME_STT_PROVIDER=deepgram
-CALLME_DEEPGRAM_API_KEY=...
+# TTS (LemonFox, OpenAI, or Deepgram)
+CALLME_TTS_API_KEY=<your-tts-api-key>
+CALLME_TTS_BASE_URL=https://api.lemonfox.ai/v1
+CALLME_TTS_VOICE=heart
+
+# STT (Deepgram)
+CALLME_STT_API_KEY=<your-deepgram-api-key>
 ```
 
-4. Expose **two ports**:
-   - Port 3333 → For phone webhooks (e.g., `https://callme.yourdomain.com`)
-   - Port 3334 → For MCP SSE transport (e.g., `https://callme-mcp.yourdomain.com`)
+4. **Network settings**:
+   - Ports Exposes: `3333`
+   - Domain: `callme.yourdomain.com`
 
 5. Update your phone provider webhook URL to `https://callme.yourdomain.com/twiml`
 
 ### 2. Connect Claude Code
 
 ```bash
-claude mcp add -s user --transport sse callme https://callme-mcp.yourdomain.com/sse
+claude mcp add -s user --transport sse callme https://callme.yourdomain.com/sse
 ```
 
 This configures Claude Code globally to connect to your deployed server.
+
+### Endpoints (all on single port)
+
+| Path | Purpose |
+|------|---------|
+| `/sse` | MCP SSE connection (Claude Code) |
+| `/messages` | MCP message posting |
+| `/twiml` | Phone provider webhooks |
+| `/media-stream` | WebSocket for audio |
+| `/health` | Health check |
 
 ### Benefits of Cloud Deployment
 
 - **No ngrok required** - Direct public URL, no tunneling
 - **Always available** - Works from any Claude Code session
-- **Multi-user support** - SSE transport allows multiple concurrent connections
+- **Single port** - Simple Coolify configuration
 - **More reliable** - No ngrok free tier limitations
 
 ---

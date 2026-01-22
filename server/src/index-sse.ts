@@ -3,10 +3,12 @@
 /**
  * CallMe MCP Server - SSE Transport (for cloud deployment)
  *
- * A unified HTTP server that handles:
- * - MCP communication via SSE (for Claude Code)
- * - Phone provider webhooks (for Twilio/Telnyx)
- * - Media streams via WebSocket (for real-time audio)
+ * Single unified HTTP server that handles:
+ * - /sse         → MCP SSE connection (Claude Code)
+ * - /messages    → MCP message posting
+ * - /twiml       → Phone provider webhooks (Twilio/Telnyx)
+ * - /media-stream → WebSocket for real-time audio
+ * - /health      → Health check
  *
  * Designed for deployment on Coolify, Railway, or similar platforms.
  */
@@ -16,7 +18,6 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { CallManager, loadServerConfig, type ServerConfig } from './phone-call.js';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
-import WebSocket, { WebSocketServer } from 'ws';
 
 // Store active SSE transports
 const activeTransports = new Map<string, SSEServerTransport>();
@@ -27,7 +28,6 @@ function createMcpServer(callManager: CallManager): Server {
     { capabilities: { tools: {} } }
   );
 
-  // List available tools
   mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
       tools: [
@@ -85,7 +85,6 @@ function createMcpServer(callManager: CallManager): Server {
     };
   });
 
-  // Handle tool calls
   mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
       if (request.params.name === 'initiate_call') {
@@ -148,7 +147,7 @@ async function main() {
   // Get port (Coolify/Railway set PORT env var)
   const port = parseInt(process.env.PORT || process.env.CALLME_PORT || '3333', 10);
 
-  // Load server config with the public URL
+  // Load server config
   let serverConfig: ServerConfig;
   try {
     serverConfig = loadServerConfig(publicUrl);
@@ -157,35 +156,25 @@ async function main() {
     process.exit(1);
   }
 
-  // Create call manager (we'll use it but start our own unified server)
+  // Create call manager
   const callManager = new CallManager(serverConfig);
 
   console.error('');
   console.error('CallMe MCP server (SSE mode) starting...');
   console.error(`Public URL: ${publicUrl}`);
+  console.error(`Port: ${port}`);
   console.error(`Phone: ${serverConfig.phoneNumber} -> ${serverConfig.userPhoneNumber}`);
   console.error(`Providers: phone=${serverConfig.providers.phone.name}, tts=${serverConfig.providers.tts.name}, stt=${serverConfig.providers.stt.name}`);
   console.error('');
 
-  // Start the CallManager's HTTP server for webhooks and media streams
-  // This handles /twiml, /health, and WebSocket upgrades for /media-stream
-  callManager.startServer();
-
-  // Get the internal HTTP server to add SSE routes
-  const internalServer = callManager.getHttpServer();
-
-  // Create separate SSE server on port + 1 for MCP transport
-  // (Simpler than modifying CallManager's HTTP server routing)
-  const ssePort = port + 1;
-
-  const sseServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+  // Create unified HTTP server
+  const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);
 
-    // CORS headers
+    // CORS headers for all requests
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -197,15 +186,12 @@ async function main() {
     if (url.pathname === '/sse' && req.method === 'GET') {
       console.error('[MCP] New SSE connection');
 
-      // Create transport - it will set up SSE headers and start streaming
       const transport = new SSEServerTransport('/messages', res);
       const sessionId = crypto.randomUUID();
       activeTransports.set(sessionId, transport);
 
-      // Create a new MCP server instance for this connection
       const mcpServer = createMcpServer(callManager);
 
-      // Clean up on disconnect
       res.on('close', () => {
         console.error('[MCP] SSE connection closed');
         activeTransports.delete(sessionId);
@@ -214,7 +200,7 @@ async function main() {
 
       try {
         await mcpServer.connect(transport);
-        console.error('[MCP] Server connected to transport');
+        console.error('[MCP] Server connected');
       } catch (error) {
         console.error('[MCP] Connection error:', error);
         activeTransports.delete(sessionId);
@@ -228,13 +214,8 @@ async function main() {
       req.on('data', (chunk) => { body += chunk; });
       req.on('end', async () => {
         try {
-          // Get session ID from query param or use most recent transport
           const sessionId = url.searchParams.get('sessionId');
-          let transport: SSEServerTransport | undefined;
-
-          if (sessionId) {
-            transport = activeTransports.get(sessionId);
-          }
+          let transport = sessionId ? activeTransports.get(sessionId) : undefined;
 
           if (!transport) {
             // Fallback to most recent transport
@@ -249,7 +230,7 @@ async function main() {
             res.end(JSON.stringify({ error: 'No active SSE session' }));
           }
         } catch (error) {
-          console.error('[MCP] Message handling error:', error);
+          console.error('[MCP] Message error:', error);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Internal error' }));
         }
@@ -257,27 +238,30 @@ async function main() {
       return;
     }
 
-    // Health check for SSE server
-    if (url.pathname === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        status: 'ok',
-        mode: 'sse',
-        activeSessions: activeTransports.size,
-        publicUrl,
-      }));
+    // Phone webhook and health routes (delegated to CallManager)
+    if (callManager.handleHttpRequest(req, res)) {
       return;
     }
 
+    // 404 for unknown routes
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found');
   });
 
-  sseServer.listen(ssePort, '0.0.0.0', () => {
-    console.error(`MCP SSE server listening on port ${ssePort}`);
+  // Attach CallManager for WebSocket handling (/media-stream)
+  callManager.attachToServer(httpServer);
+
+  // Start the unified server
+  httpServer.listen(port, '0.0.0.0', () => {
+    console.error(`Server listening on port ${port}`);
     console.error('');
-    console.error('To connect Claude Code globally:');
-    console.error(`  claude mcp add -s user --transport sse callme ${publicUrl.replace(`:${port}`, `:${ssePort}`)}/sse`);
+    console.error('Endpoints:');
+    console.error(`  ${publicUrl}/sse         → MCP SSE (Claude Code)`);
+    console.error(`  ${publicUrl}/twiml       → Phone webhooks`);
+    console.error(`  ${publicUrl}/health      → Health check`);
+    console.error('');
+    console.error('Connect Claude Code with:');
+    console.error(`  claude mcp add -s user --transport sse callme ${publicUrl}/sse`);
     console.error('');
   });
 
@@ -285,7 +269,7 @@ async function main() {
   const shutdown = () => {
     console.error('\nShutting down...');
     callManager.shutdown();
-    sseServer.close();
+    httpServer.close();
     process.exit(0);
   };
 
