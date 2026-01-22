@@ -267,8 +267,8 @@ async function main() {
       const messagesEndpoint = `${publicUrl}/messages`;
       const transport = new SSEServerTransport(messagesEndpoint, res);
 
-      // Get the sessionId from the transport (it generates one internally)
-      const sessionId = (transport as any).sessionId || (transport as any)._sessionId || crypto.randomUUID();
+      // Use the transport's sessionId (public property in SDK 1.10+)
+      const sessionId = transport.sessionId;
       activeTransports.set(sessionId, transport);
       console.error(`[MCP] Session ID: ${sessionId}`);
 

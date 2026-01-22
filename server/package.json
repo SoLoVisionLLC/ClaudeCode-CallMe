@@ -12,7 +12,7 @@
     "dev:sse": "bun --watch src/index-sse.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@modelcontextprotocol/sdk": "^1.11.0",
     "@ngrok/ngrok": "^1.4.1",
     "openai": "^4.77.3",
     "ws": "^8.18.0"
