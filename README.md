@@ -266,17 +266,20 @@ CALLME_STT_API_KEY=<your-deepgram-api-key>
 ### 2. Connect Claude Code
 
 ```bash
-claude mcp add -s user --transport sse callme https://callme.yourdomain.com/sse
+# Recommended: HTTP transport (Streamable HTTP)
+claude mcp add -s user --transport http callme https://callme.yourdomain.com/mcp
 ```
 
 This configures Claude Code globally to connect to your deployed server.
+
+> **Note**: SSE transport (`--transport sse`) is deprecated. Use HTTP transport for best compatibility.
 
 ### Endpoints (all on single port)
 
 | Path | Purpose |
 |------|---------|
-| `/sse` | MCP SSE connection (Claude Code) |
-| `/messages` | MCP message posting |
+| `/mcp` | MCP Streamable HTTP (recommended) |
+| `/sse` | MCP SSE (deprecated) |
 | `/twiml` | Phone provider webhooks |
 | `/media-stream` | WebSocket for audio |
 | `/health` | Health check |
