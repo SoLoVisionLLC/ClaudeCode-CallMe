@@ -4,8 +4,8 @@
  * CallMe MCP Server - HTTP Transport (for cloud deployment)
  *
  * Single unified HTTP server that handles:
- * - /mcp          -> MCP Streamable HTTP (newer protocol 2025-11-25)
- * - /sse          -> MCP SSE connection (legacy protocol 2024-11-05)
+ * - /mcp          -> MCP Streamable HTTP (protocol 2025-03-26) - RECOMMENDED
+ * - /sse          -> MCP SSE connection (protocol 2024-11-05) - DEPRECATED
  * - /messages     -> MCP message posting (for SSE)
  * - /twiml        -> Phone provider webhooks (Twilio/Telnyx)
  * - /media-stream -> WebSocket for real-time audio
@@ -24,6 +24,18 @@ import { createServer, IncomingMessage, ServerResponse } from 'http';
 // Store active transports by session ID
 const transports = new Map<string, SSEServerTransport | StreamableHTTPServerTransport>();
 
+// Request counter for debugging
+let requestCounter = 0;
+
+function log(message: string, data?: any) {
+  const timestamp = new Date().toISOString();
+  if (data) {
+    console.error(`[${timestamp}] ${message}`, JSON.stringify(data, null, 2));
+  } else {
+    console.error(`[${timestamp}] ${message}`);
+  }
+}
+
 function createMcpServer(callManager: CallManager): Server {
   const mcpServer = new Server(
     { name: 'callme', version: '3.0.0' },
@@ -31,6 +43,7 @@ function createMcpServer(callManager: CallManager): Server {
   );
 
   mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
+    log('[MCP] ListTools request');
     return {
       tools: [
         {
@@ -88,6 +101,7 @@ function createMcpServer(callManager: CallManager): Server {
   });
 
   mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+    log('[MCP] CallTool request', { tool: request.params.name });
     try {
       if (request.params.name === 'initiate_call') {
         const { message } = request.params.arguments as { message: string };
@@ -161,13 +175,14 @@ async function main() {
   // Create call manager
   const callManager = new CallManager(serverConfig);
 
-  console.error('');
-  console.error('CallMe MCP server (HTTP mode) starting...');
-  console.error(`Public URL: ${publicUrl}`);
-  console.error(`Port: ${port}`);
-  console.error(`Phone: ${serverConfig.phoneNumber} -> ${serverConfig.userPhoneNumber}`);
-  console.error(`Providers: phone=${serverConfig.providers.phone.name}, tts=${serverConfig.providers.tts.name}, stt=${serverConfig.providers.stt.name}`);
-  console.error('');
+  log('='.repeat(60));
+  log('CallMe MCP Server Starting');
+  log('='.repeat(60));
+  log(`Public URL: ${publicUrl}`);
+  log(`Port: ${port}`);
+  log(`Phone: ${serverConfig.phoneNumber} -> ${serverConfig.userPhoneNumber}`);
+  log(`Providers: phone=${serverConfig.providers.phone.name}, tts=${serverConfig.providers.tts.name}, stt=${serverConfig.providers.stt.name}`);
+  log('');
 
   // Helper to read request body
   const readBody = (req: IncomingMessage): Promise<string> => {
@@ -181,7 +196,14 @@ async function main() {
 
   // Create unified HTTP server
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+    const reqId = ++requestCounter;
     const url = new URL(req.url!, `http://${req.headers.host}`);
+
+    // Log EVERY request with headers
+    log(`[REQ ${reqId}] ${req.method} ${url.pathname}${url.search}`, {
+      headers: req.headers,
+      remoteAddress: req.socket?.remoteAddress
+    });
 
     // CORS headers for all requests
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -190,13 +212,15 @@ async function main() {
     res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Authorization, Mcp-Session-Id');
 
     if (req.method === 'OPTIONS') {
+      log(`[RES ${reqId}] 204 No Content (CORS preflight)`);
       res.writeHead(204);
       res.end();
       return;
     }
 
-    // OAuth metadata endpoint (for MCP SSE auth)
+    // OAuth metadata endpoint (for MCP auth)
     if (url.pathname === '/.well-known/oauth-authorization-server') {
+      log(`[RES ${reqId}] 200 OK (OAuth metadata)`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         issuer: publicUrl,
@@ -214,10 +238,12 @@ async function main() {
     // OAuth dynamic client registration (RFC 7591)
     if (url.pathname === '/oauth/register' && req.method === 'POST') {
       const body = await readBody(req);
+      log(`[REQ ${reqId}] OAuth register body:`, body);
       let requestData: any = {};
       try { requestData = JSON.parse(body); } catch {}
 
       const clientId = crypto.randomUUID();
+      log(`[RES ${reqId}] 201 Created (OAuth client: ${clientId})`);
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         client_id: clientId,
@@ -238,13 +264,17 @@ async function main() {
       const state = url.searchParams.get('state');
       const code = crypto.randomUUID();
 
+      log(`[REQ ${reqId}] OAuth authorize`, { redirectUri, state });
+
       if (redirectUri) {
         const redirectUrl = new URL(redirectUri);
         redirectUrl.searchParams.set('code', code);
         if (state) redirectUrl.searchParams.set('state', state);
+        log(`[RES ${reqId}] 302 Redirect to ${redirectUrl.toString()}`);
         res.writeHead(302, { Location: redirectUrl.toString() });
         res.end();
       } else {
+        log(`[RES ${reqId}] 400 Bad Request (missing redirect_uri)`);
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'missing redirect_uri' }));
       }
@@ -253,10 +283,13 @@ async function main() {
 
     // OAuth token endpoint - return access token
     if (url.pathname === '/oauth/token' && req.method === 'POST') {
-      await readBody(req); // consume body
+      const body = await readBody(req);
+      log(`[REQ ${reqId}] OAuth token body:`, body);
+      const accessToken = crypto.randomUUID();
+      log(`[RES ${reqId}] 200 OK (access_token: ${accessToken.slice(0, 8)}...)`);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        access_token: crypto.randomUUID(),
+        access_token: accessToken,
         token_type: 'Bearer',
         expires_in: 86400,
       }));
@@ -264,13 +297,19 @@ async function main() {
     }
 
     //=========================================================================
-    // STREAMABLE HTTP TRANSPORT (Protocol 2025-11-25) - NEW
+    // STREAMABLE HTTP TRANSPORT (Protocol 2025-03-26) - RECOMMENDED
     //=========================================================================
     if (url.pathname === '/mcp') {
-      console.error(`[MCP] ${req.method} /mcp`);
+      log(`[REQ ${reqId}] MCP Streamable HTTP endpoint`);
+
+      // Check Accept header
+      const acceptHeader = req.headers.accept || '';
+      log(`[REQ ${reqId}] Accept header: "${acceptHeader}"`);
 
       try {
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
+        log(`[REQ ${reqId}] Mcp-Session-Id: ${sessionId || '(none)'}`);
+
         let transport: StreamableHTTPServerTransport | undefined;
 
         // Check for existing session
@@ -278,21 +317,30 @@ async function main() {
           const existing = transports.get(sessionId);
           if (existing instanceof StreamableHTTPServerTransport) {
             transport = existing;
-            console.error(`[MCP] Reusing session: ${sessionId}`);
+            log(`[REQ ${reqId}] Reusing existing session`);
+          } else {
+            log(`[REQ ${reqId}] Session not found or wrong type`);
           }
         }
 
         // For new sessions (POST with initialize request)
         if (!transport && req.method === 'POST') {
           const body = await readBody(req);
-          const parsed = body ? JSON.parse(body) : undefined;
+          log(`[REQ ${reqId}] POST body:`, body.slice(0, 500));
 
-          if (isInitializeRequest(parsed)) {
-            console.error('[MCP] New Streamable HTTP session');
+          let parsed: any;
+          try {
+            parsed = body ? JSON.parse(body) : undefined;
+          } catch (e) {
+            log(`[REQ ${reqId}] Failed to parse body as JSON`);
+          }
+
+          if (parsed && isInitializeRequest(parsed)) {
+            log(`[REQ ${reqId}] Creating new Streamable HTTP session`);
             transport = new StreamableHTTPServerTransport({
               sessionIdGenerator: () => crypto.randomUUID(),
               onsessioninitialized: (sid) => {
-                console.error(`[MCP] Session initialized: ${sid}`);
+                log(`[REQ ${reqId}] Session initialized: ${sid}`);
                 transports.set(sid, transport!);
               }
             });
@@ -300,23 +348,29 @@ async function main() {
             transport.onclose = () => {
               const sid = transport!.sessionId;
               if (sid) {
-                console.error(`[MCP] Session closed: ${sid}`);
+                log(`Session closed: ${sid}`);
                 transports.delete(sid);
               }
             };
 
             const mcpServer = createMcpServer(callManager);
             await mcpServer.connect(transport);
+            log(`[REQ ${reqId}] MCP server connected to transport`);
           }
 
           if (transport) {
+            log(`[REQ ${reqId}] Handling request with transport`);
             await transport.handleRequest(req, res, parsed);
+            log(`[REQ ${reqId}] Request handled`);
             return;
           }
         }
 
-        // Handle other requests with existing transport
+        // Handle GET requests (SSE stream for notifications) or other requests with existing transport
         if (transport) {
+          if (req.method === 'GET') {
+            log(`[REQ ${reqId}] GET request for SSE stream`);
+          }
           const body = req.method === 'POST' ? await readBody(req) : undefined;
           const parsed = body ? JSON.parse(body) : undefined;
           await transport.handleRequest(req, res, parsed);
@@ -324,6 +378,7 @@ async function main() {
         }
 
         // No valid session
+        log(`[RES ${reqId}] 400 Bad Request (no valid session)`);
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           jsonrpc: '2.0',
@@ -331,7 +386,7 @@ async function main() {
           id: null
         }));
       } catch (error) {
-        console.error('[MCP] Error:', error);
+        log(`[REQ ${reqId}] Error:`, error);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
@@ -345,35 +400,39 @@ async function main() {
     }
 
     //=========================================================================
-    // SSE TRANSPORT (Protocol 2024-11-05) - LEGACY/DEPRECATED
+    // SSE TRANSPORT (Protocol 2024-11-05) - DEPRECATED
     //=========================================================================
     if (url.pathname === '/sse' && req.method === 'GET') {
-      console.error('[MCP] New SSE connection (legacy)');
+      log(`[REQ ${reqId}] SSE connection (DEPRECATED transport)`);
 
       const transport = new SSEServerTransport('/messages', res);
       transports.set(transport.sessionId, transport);
-      console.error(`[MCP] SSE Session: ${transport.sessionId}`);
+      log(`[REQ ${reqId}] SSE Session: ${transport.sessionId}`);
 
       res.on('close', () => {
-        console.error(`[MCP] SSE closed: ${transport.sessionId}`);
+        log(`SSE closed: ${transport.sessionId}`);
         transports.delete(transport.sessionId);
       });
 
       const mcpServer = createMcpServer(callManager);
       await mcpServer.connect(transport);
+      log(`[REQ ${reqId}] MCP server connected to SSE transport`);
       return;
     }
 
     // SSE messages endpoint
     if (url.pathname === '/messages' && req.method === 'POST') {
       const sessionId = url.searchParams.get('sessionId');
-      console.error(`[MCP] POST /messages, session: ${sessionId}`);
+      log(`[REQ ${reqId}] SSE message for session: ${sessionId}`);
 
       const existing = sessionId ? transports.get(sessionId) : undefined;
       if (existing instanceof SSEServerTransport) {
         const body = await readBody(req);
+        log(`[REQ ${reqId}] Message body:`, body.slice(0, 200));
         await existing.handlePostMessage(req, res, body);
+        log(`[REQ ${reqId}] Message handled`);
       } else {
+        log(`[RES ${reqId}] 400 Bad Request (invalid session)`);
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid or missing session' }));
       }
@@ -382,10 +441,12 @@ async function main() {
 
     // Phone webhook and health routes (delegated to CallManager)
     if (callManager.handleHttpRequest(req, res)) {
+      log(`[REQ ${reqId}] Handled by CallManager`);
       return;
     }
 
     // 404 for unknown routes
+    log(`[RES ${reqId}] 404 Not Found`);
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('Not Found');
   });
@@ -395,28 +456,28 @@ async function main() {
 
   // Start the unified server
   httpServer.listen(port, '0.0.0.0', () => {
-    console.error(`Server listening on port ${port}`);
-    console.error('');
-    console.error('Endpoints:');
-    console.error(`  ${publicUrl}/mcp          -> MCP Streamable HTTP (new)`);
-    console.error(`  ${publicUrl}/sse          -> MCP SSE (legacy)`);
-    console.error(`  ${publicUrl}/twiml        -> Phone webhooks`);
-    console.error(`  ${publicUrl}/health       -> Health check`);
-    console.error('');
-    console.error('Connect Claude Code with:');
-    console.error(`  claude mcp add -s user --transport sse callme ${publicUrl}/sse`);
-    console.error('');
+    log(`Server listening on port ${port}`);
+    log('');
+    log('Endpoints:');
+    log(`  ${publicUrl}/mcp          -> MCP Streamable HTTP (RECOMMENDED)`);
+    log(`  ${publicUrl}/sse          -> MCP SSE (DEPRECATED)`);
+    log(`  ${publicUrl}/twiml        -> Phone webhooks`);
+    log(`  ${publicUrl}/health       -> Health check`);
+    log('');
+    log('Connect with:');
+    log(`  claude mcp add -s user --transport http callme ${publicUrl}/mcp`);
+    log('');
   });
 
   // Graceful shutdown
   const shutdown = async () => {
-    console.error('\nShutting down...');
+    log('Shutting down...');
     callManager.shutdown();
     for (const [sid, transport] of transports) {
       try {
         await transport.close();
       } catch (e) {
-        console.error(`Error closing session ${sid}:`, e);
+        log(`Error closing session ${sid}:`, e);
       }
     }
     transports.clear();
