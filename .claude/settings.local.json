@@ -19,7 +19,13 @@
       "WebFetch(domain:developers.deepgram.com)",
       "WebFetch(domain:developers.telnyx.com)",
       "WebFetch(domain:telnyx.com)",
-      "WebFetch(domain:community.openai.com)"
+      "WebFetch(domain:community.openai.com)",
+      "mcp__callme-dev__initiate_call",
+      "mcp__callme-dev__end_call",
+      "WebFetch(domain:ngrok.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(bun -e:*)"
     ]
   }
 }

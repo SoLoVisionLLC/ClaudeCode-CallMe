@@ -2,9 +2,10 @@
  * ngrok tunnel management for exposing local webhooks to phone providers
  */
 
-import ngrok from '@ngrok/ngrok';
+import ngrok, { SessionBuilder } from '@ngrok/ngrok';
 
 let listener: ngrok.Listener | null = null;
+let session: ngrok.Session | null = null;
 let currentPort: number | null = null;
 let currentUrl: string | null = null;
 let intentionallyClosed = false;
@@ -34,14 +35,23 @@ async function doStartNgrok(port: number): Promise<string> {
     );
   }
 
-  listener = await ngrok.forward({
-    addr: port,
-    authtoken,
-    // Use custom domain if configured (paid ngrok feature)
-    domain: process.env.CALLME_NGROK_DOMAIN || undefined,
-    // Enable pooling to allow reconnection if previous session is stale
-    pooling: 'pool',
-  });
+  // Create a session with the authtoken
+  session = await new SessionBuilder()
+    .authtoken(authtoken)
+    .connect();
+
+  // Build the HTTP endpoint with pooling enabled
+  const builder = session.httpEndpoint()
+    .poolingEnabled(true);
+
+  // Add custom domain if configured
+  const domain = process.env.CALLME_NGROK_DOMAIN;
+  if (domain) {
+    builder.domain(domain);
+  }
+
+  // Start listening and forwarding to the local port
+  listener = await builder.listenAndForward(`http://localhost:${port}`);
 
   const url = listener.url();
   if (!url) {
@@ -171,6 +181,10 @@ export async function stopNgrok(): Promise<void> {
   if (listener) {
     await listener.close();
     listener = null;
+  }
+  if (session) {
+    await session.close();
+    session = null;
   }
   currentUrl = null;
 }

@@ -1,0 +1,41 @@
+# CallMe MCP Server - Docker Compose for local testing
+# For Coolify deployment, use the Dockerfile directly
+
+version: '3.8'
+
+services:
+  callme:
+    build: .
+    ports:
+      - "3333:3333"  # Webhooks + media streams
+      - "3334:3334"  # MCP SSE transport
+    environment:
+      # Required: Your deployment URL
+      - CALLME_PUBLIC_URL=https://callme.sololink.cloud
+
+      # Required: Phone provider credentials (Twilio OR Telnyx)
+      # Twilio:
+      - CALLME_TWILIO_ACCOUNT_SID=${CALLME_TWILIO_ACCOUNT_SID}
+      - CALLME_TWILIO_AUTH_TOKEN=${CALLME_TWILIO_AUTH_TOKEN}
+      - CALLME_PHONE_NUMBER=${CALLME_PHONE_NUMBER}
+      # Telnyx (alternative):
+      # - CALLME_TELNYX_API_KEY=${CALLME_TELNYX_API_KEY}
+      # - CALLME_TELNYX_PUBLIC_KEY=${CALLME_TELNYX_PUBLIC_KEY}
+      # - CALLME_PHONE_NUMBER=${CALLME_PHONE_NUMBER}
+
+      # Required: Your phone number to receive calls
+      - CALLME_USER_PHONE_NUMBER=${CALLME_USER_PHONE_NUMBER}
+
+      # Required: TTS provider (OpenAI or Deepgram)
+      - CALLME_TTS_PROVIDER=openai
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Alternative TTS:
+      # - CALLME_TTS_PROVIDER=deepgram
+      # - CALLME_DEEPGRAM_API_KEY=${CALLME_DEEPGRAM_API_KEY}
+
+      # Required: STT provider (Deepgram recommended)
+      - CALLME_STT_PROVIDER=deepgram
+      - CALLME_DEEPGRAM_API_KEY=${CALLME_DEEPGRAM_API_KEY}
+      # Alternative STT:
+      # - CALLME_STT_PROVIDER=openai
+    restart: unless-stopped

@@ -228,12 +228,68 @@ Plus OpenAI costs (same for both providers):
 
 ---
 
+## Cloud Deployment (Coolify/Railway)
+
+Instead of running locally with ngrok, you can deploy the server to the cloud for a more reliable setup.
+
+### 1. Deploy to Coolify
+
+1. Create a new service in Coolify pointing to this repo
+2. Set the **Dockerfile path** to `server/Dockerfile`
+3. Configure environment variables:
+
+```env
+# Required: Your deployment URL
+CALLME_PUBLIC_URL=https://callme.yourdomain.com
+
+# Phone provider (same as local setup)
+CALLME_PHONE_PROVIDER=telnyx
+CALLME_PHONE_ACCOUNT_SID=<your-connection-id>
+CALLME_PHONE_AUTH_TOKEN=<your-api-key>
+CALLME_PHONE_NUMBER=+15551234567
+CALLME_USER_PHONE_NUMBER=+15559876543
+
+# TTS/STT providers
+CALLME_TTS_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+CALLME_STT_PROVIDER=deepgram
+CALLME_DEEPGRAM_API_KEY=...
+```
+
+4. Expose **two ports**:
+   - Port 3333 → For phone webhooks (e.g., `https://callme.yourdomain.com`)
+   - Port 3334 → For MCP SSE transport (e.g., `https://callme-mcp.yourdomain.com`)
+
+5. Update your phone provider webhook URL to `https://callme.yourdomain.com/twiml`
+
+### 2. Connect Claude Code
+
+```bash
+claude mcp add -s user --transport sse callme https://callme-mcp.yourdomain.com/sse
+```
+
+This configures Claude Code globally to connect to your deployed server.
+
+### Benefits of Cloud Deployment
+
+- **No ngrok required** - Direct public URL, no tunneling
+- **Always available** - Works from any Claude Code session
+- **Multi-user support** - SSE transport allows multiple concurrent connections
+- **More reliable** - No ngrok free tier limitations
+
+---
+
 ## Development
 
 ```bash
 cd server
 bun install
+
+# Local mode (with ngrok)
 bun run dev
+
+# SSE mode (for testing cloud deployment)
+bun run dev:sse
 ```
 
 ---

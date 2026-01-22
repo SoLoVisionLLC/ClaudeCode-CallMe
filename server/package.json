@@ -1,13 +1,15 @@
 {
   "name": "callme-mcp",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "MCP server that lets Claude call you on the phone",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
     "prestart": "bun install --silent",
     "start": "bun run src/index.ts",
-    "dev": "bun --watch src/index.ts"
+    "start:sse": "bun run src/index-sse.ts",
+    "dev": "bun --watch src/index.ts",
+    "dev:sse": "bun --watch src/index-sse.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
