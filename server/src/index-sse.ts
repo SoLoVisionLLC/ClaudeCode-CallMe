@@ -292,22 +292,30 @@ async function main() {
 
     // Messages endpoint - receives POST requests from Claude Code
     if (url.pathname === '/messages' && req.method === 'POST') {
+      console.error(`[MCP] POST /messages received, sessionId param: ${url.searchParams.get('sessionId')}`);
+      console.error(`[MCP] Active transports: ${activeTransports.size}`);
+
       let body = '';
       req.on('data', (chunk) => { body += chunk; });
       req.on('end', async () => {
+        console.error(`[MCP] Message body: ${body.substring(0, 200)}...`);
         try {
           const sessionId = url.searchParams.get('sessionId');
           let transport = sessionId ? activeTransports.get(sessionId) : undefined;
 
           if (!transport) {
+            console.error(`[MCP] Session ${sessionId} not found, using fallback`);
             // Fallback to most recent transport
             const transports = Array.from(activeTransports.values());
             transport = transports[transports.length - 1];
           }
 
           if (transport) {
+            console.error('[MCP] Handling message with transport');
             await transport.handlePostMessage(req, res, body);
+            console.error('[MCP] Message handled successfully');
           } else {
+            console.error('[MCP] No transport available!');
             res.writeHead(503, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'No active SSE session' }));
           }
