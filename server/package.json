@@ -17,7 +17,11 @@
     "start": "bun run src/index.ts",
     "start:sse": "bun run src/index-sse.ts",
     "dev": "bun --watch src/index.ts",
-    "dev:sse": "bun --watch src/index-sse.ts"
+    "dev:sse": "bun --watch src/index-sse.ts",
+    "release": "npm run release:patch",
+    "release:patch": "npm version patch && git push && git push --tags",
+    "release:minor": "npm version minor && git push && git push --tags",
+    "release:major": "npm version major && git push && git push --tags"
   },
   "keywords": [
     "mcp",
