@@ -1,15 +1,46 @@
 {
-  "name": "solo-callme-mcp",
-  "version": "1.0.3",
-  "description": "MCP server that lets Claude call you on the phone",
+  "name": "solo-callme",
+  "version": "1.0.4",
+  "description": "MCP server that lets Claude Code call you on the phone",
   "type": "module",
   "main": "src/index.ts",
+  "bin": {
+    "solo-callme": "./src/index.ts"
+  },
+  "files": [
+    "src/**/*",
+    "package.json",
+    "README.md"
+  ],
   "scripts": {
     "prestart": "bun install --silent",
     "start": "bun run src/index.ts",
     "start:sse": "bun run src/index-sse.ts",
     "dev": "bun --watch src/index.ts",
     "dev:sse": "bun --watch src/index-sse.ts"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "claude-code",
+    "phone",
+    "voice",
+    "telnyx",
+    "anthropic",
+    "ai"
+  ],
+  "author": "SoLoVisionLLC",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SoLoVisionLLC/SoLo-CallMe.git"
+  },
+  "homepage": "https://github.com/SoLoVisionLLC/SoLo-CallMe#readme",
+  "bugs": {
+    "url": "https://github.com/SoLoVisionLLC/SoLo-CallMe/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.0",
