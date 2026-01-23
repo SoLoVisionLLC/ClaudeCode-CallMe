@@ -1,141 +1,131 @@
 # SoLo-CallMe
 
-**Minimal plugin that lets Claude Code call you on the phone.**
+**Let Claude Code call you on the phone.**
 
-Start a task, walk away. Your phone/watch rings when Claude is done, stuck, or needs a decision.
+Start a task, walk away. Your phone rings when Claude is done, stuck, or needs a decision.
 
-<img src="./call-me-comic-min.png" width="800" alt="CallMe comic strip">
+<img src="./call-me-comic-min.png" width="800" alt="SoLo-CallMe comic strip">
 
-- **Minimal plugin** - Does one thing: call you on the phone. No crazy setups.
-- **Multi-turn conversations** - Talk through decisions naturally.
-- **Works anywhere** - Smartphone, smartwatch, or even landline!
-- **Tool-use composable** - Claude can e.g. do a web search while on a call with you.
+- **Just works** - Connect to our hosted server in one command
+- **Multi-turn conversations** - Talk through decisions naturally
+- **Works anywhere** - Smartphone, smartwatch, or landline
+- **Tool-use composable** - Claude can search the web while on a call with you
 
 ---
 
-## Quick Start
+## Quick Start (Hosted Server)
 
-### 1. Get Required Accounts
+The fastest way to get started - connect to our hosted MCP server.
 
-You'll need:
-- **Phone provider**: [Telnyx](https://telnyx.com) or [Twilio](https://twilio.com)
-- **OpenAI API key**: For speech-to-text and text-to-speech
-- **ngrok account**: Free at [ngrok.com](https://ngrok.com) (for webhook tunneling)
+### 1. Get a Phone Number
 
-### 2. Set Up Phone Provider
+You need a [Telnyx](https://telnyx.com) account with a phone number (~$1/month).
 
-Choose **one** of the following:
-
-<details>
-<summary><b>Option A: Telnyx (Recommended - 50% cheaper)</b></summary>
-
-1. Create account at [portal.telnyx.com](https://portal.telnyx.com) and verify your identity
-2. [Buy a phone number](https://portal.telnyx.com/#/numbers/buy-numbers) (~$1/month)
+1. Create account at [portal.telnyx.com](https://portal.telnyx.com)
+2. [Buy a phone number](https://portal.telnyx.com/#/numbers/buy-numbers)
 3. [Create a Voice API application](https://portal.telnyx.com/#/call-control/applications):
-   - Set webhook URL to `https://your-ngrok-url/twiml` and API version to v2
-     - You can see your ngrok URL on the ngrok dashboard
-   - Note your **Application ID** and **API Key**
-4. [Verify the phone number](https://portal.telnyx.com/#/numbers/verified-numbers) you want to receive calls at
-5. (Optional but recommended) Get your **Public Key** from Account Settings > Keys & Credentials for webhook signature verification
+   - Webhook URL: `https://callme.sololink.cloud/twiml`
+   - API version: v2
+4. [Verify your phone number](https://portal.telnyx.com/#/numbers/verified-numbers) (the number you want to receive calls on)
+5. Get your **Application ID** and **API Key** from the portal
 
-**Environment variables for Telnyx:**
-```bash
-CALLME_PHONE_PROVIDER=telnyx
-CALLME_PHONE_ACCOUNT_SID=<Application ID>
-CALLME_PHONE_AUTH_TOKEN=<API Key>
-CALLME_TELNYX_PUBLIC_KEY=<Public Key>  # Optional: enables webhook security
-```
+### 2. Configure Claude Code
 
-</details>
-
-<details>
-<summary><b>Option B: Twilio (Not recommended - need to buy $20 of credits just to start and more expensive overall)</b></summary>
-
-1. Create account at [twilio.com/console](https://www.twilio.com/console)
-2. Use the free number your account comes with or [buy a new phone number](https://www.twilio.com/console/phone-numbers/incoming) (~$1.15/month)
-3. Find your **Account SID** and **Auth Token** on the [Console Dashboard](https://www.twilio.com/console)
-
-**Environment variables for Twilio:**
-```bash
-CALLME_PHONE_PROVIDER=twilio
-CALLME_PHONE_ACCOUNT_SID=<Account SID>
-CALLME_PHONE_AUTH_TOKEN=<Auth Token>
-```
-
-</details>
-
-### 3. Set Environment Variables
-
-Add these to `~/.claude/settings.json` (recommended) or export them in your shell:
+Add to `~/.claude/settings.json`:
 
 ```json
 {
   "env": {
     "CALLME_PHONE_PROVIDER": "telnyx",
-    "CALLME_PHONE_ACCOUNT_SID": "your-connection-id-or-account-sid",
-    "CALLME_PHONE_AUTH_TOKEN": "your-api-key-or-auth-token",
+    "CALLME_PHONE_ACCOUNT_SID": "your-application-id",
+    "CALLME_PHONE_AUTH_TOKEN": "your-api-key",
     "CALLME_PHONE_NUMBER": "+15551234567",
-    "CALLME_USER_PHONE_NUMBER": "+15559876543",
-    "CALLME_OPENAI_API_KEY": "sk-...",
-    "CALLME_NGROK_AUTHTOKEN": "your-ngrok-token"
+    "CALLME_USER_PHONE_NUMBER": "+15559876543"
   }
 }
 ```
 
-#### Required Variables
-
-| Variable | Description |
-|----------|-------------|
-| `CALLME_PHONE_PROVIDER` | `telnyx` (default) or `twilio` |
-| `CALLME_PHONE_ACCOUNT_SID` | Telnyx Connection ID or Twilio Account SID |
-| `CALLME_PHONE_AUTH_TOKEN` | Telnyx API Key or Twilio Auth Token |
-| `CALLME_PHONE_NUMBER` | Phone number Claude calls from (E.164 format) |
-| `CALLME_USER_PHONE_NUMBER` | Your phone number to receive calls |
-| `CALLME_OPENAI_API_KEY` | OpenAI API key (for TTS and realtime STT) |
-| `CALLME_NGROK_AUTHTOKEN` | ngrok auth token for webhook tunneling |
-
-#### Optional Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CALLME_TTS_VOICE` | `onyx` | OpenAI voice: alloy, echo, fable, onyx, nova, shimmer |
-| `CALLME_PORT` | `3333` | Local HTTP server port |
-| `CALLME_NGROK_DOMAIN` | - | Custom ngrok domain (paid feature) |
-| `CALLME_TRANSCRIPT_TIMEOUT_MS` | `180000` | Timeout for user speech (3 minutes) |
-| `CALLME_STT_SILENCE_DURATION_MS` | `800` | Silence duration to detect end of speech |
-| `CALLME_TELNYX_PUBLIC_KEY` | - | Telnyx public key for webhook signature verification (recommended) |
-
-### 4. Install Plugin
+### 3. Connect to Server
 
 ```bash
-claude plugin install github:SoLoVisionLLC/SoLo-CallMe
+claude mcp add -s user --transport http solo-callme https://callme.sololink.cloud/mcp
 ```
 
 Restart Claude Code. Done!
 
 ---
 
+## Self-Hosting
+
+Want to run your own server? Deploy to Coolify, Railway, or any Docker host.
+
+### Required Services
+
+| Service | Provider | Cost |
+|---------|----------|------|
+| Phone | [Telnyx](https://telnyx.com) | ~$0.007/min + $1/mo |
+| Text-to-Speech | [LemonFox](https://lemonfox.ai) or [OpenAI](https://openai.com) | ~$0.02/min |
+| Speech-to-Text | [Deepgram](https://deepgram.com) | ~$0.006/min |
+
+**Total**: ~$0.03-0.04/minute of conversation
+
+### Environment Variables
+
+```env
+# Required: Your deployment URL
+CALLME_PUBLIC_URL=https://callme.yourdomain.com
+
+# Phone (Telnyx)
+CALLME_PHONE_PROVIDER=telnyx
+CALLME_PHONE_ACCOUNT_SID=<application-id>
+CALLME_PHONE_AUTH_TOKEN=<api-key>
+CALLME_PHONE_NUMBER=+15551234567
+CALLME_USER_PHONE_NUMBER=+15559876543
+
+# Text-to-Speech (LemonFox recommended)
+CALLME_TTS_API_KEY=<your-api-key>
+CALLME_TTS_BASE_URL=https://api.lemonfox.ai/v1
+CALLME_TTS_VOICE=heart
+
+# Speech-to-Text (Deepgram)
+CALLME_STT_API_KEY=<your-deepgram-key>
+```
+
+### Deploy with Docker
+
+```bash
+docker build -t solo-callme .
+docker run -p 3333:3333 --env-file .env solo-callme
+```
+
+Or deploy directly on Coolify/Railway pointing to this repo.
+
+### Connect Claude Code
+
+```bash
+claude mcp add -s user --transport http solo-callme https://callme.yourdomain.com/mcp
+```
+
+---
+
 ## How It Works
 
 ```
-Claude Code                    CallMe MCP Server (local)
-    │                                    │
-    │  "I finished the feature..."       │
-    ▼                                    ▼
-Plugin ────stdio──────────────────► MCP Server
-                                         │
-                                         ├─► ngrok tunnel
-                                         │
-                                         ▼
-                                   Phone Provider (Telnyx/Twilio)
-                                         │
-                                         ▼
-                                   Your Phone rings
-                                   You speak
-                                   Text returns to Claude
+Claude Code                         SoLo-CallMe Server
+    │                                      │
+    │  "I finished the feature..."         │
+    ▼                                      ▼
+   MCP ─────── HTTP ─────────────────► Server
+                                           │
+                                           ├─► Telnyx (phone)
+                                           ├─► LemonFox (TTS)
+                                           └─► Deepgram (STT)
+                                                   │
+                                                   ▼
+                                            Your Phone rings
+                                            You speak
+                                            Text returns to Claude
 ```
-
-The MCP server runs locally and automatically creates an ngrok tunnel for phone provider webhooks.
 
 ---
 
@@ -161,19 +151,12 @@ const response = await continue_call({
 ```
 
 ### `speak_to_user`
-Speak to the user without waiting for a response. Useful for acknowledging requests before time-consuming operations.
+Speak without waiting for a response. Useful before time-consuming operations.
 
 ```typescript
 await speak_to_user({
   call_id: callId,
-  message: "Let me search for that information. Give me a moment..."
-});
-// Continue with your long-running task
-const results = await performSearch();
-// Then continue the conversation
-const response = await continue_call({
-  call_id: callId,
-  message: `I found ${results.length} results...`
+  message: "Let me search for that. One moment..."
 });
 ```
 
@@ -189,91 +172,58 @@ await end_call({
 
 ---
 
-## Costs
+## Configuration Reference
 
-| Service | Telnyx | Twilio |
-|---------|--------|--------|
-| Outbound calls | ~$0.007/min | ~$0.014/min |
-| Phone number | ~$1/month | ~$1.15/month |
+### Required Variables
 
-Plus OpenAI costs (same for both providers):
-- **Speech-to-text**: ~$0.006/min (Whisper)
-- **Text-to-speech**: ~$0.02/min (TTS)
+| Variable | Description |
+|----------|-------------|
+| `CALLME_PHONE_PROVIDER` | `telnyx` (recommended) or `twilio` |
+| `CALLME_PHONE_ACCOUNT_SID` | Telnyx Application ID |
+| `CALLME_PHONE_AUTH_TOKEN` | Telnyx API Key |
+| `CALLME_PHONE_NUMBER` | Phone number Claude calls from (E.164) |
+| `CALLME_USER_PHONE_NUMBER` | Your phone number to receive calls |
 
-**Total**: ~$0.03-0.04/minute of conversation
+### Self-Hosting Variables
+
+| Variable | Description |
+|----------|-------------|
+| `CALLME_PUBLIC_URL` | Your server's public URL |
+| `CALLME_TTS_API_KEY` | TTS provider API key |
+| `CALLME_TTS_BASE_URL` | TTS API endpoint (e.g., `https://api.lemonfox.ai/v1`) |
+| `CALLME_TTS_VOICE` | Voice name (e.g., `heart`, `onyx`) |
+| `CALLME_STT_API_KEY` | Deepgram API key |
+
+### Optional Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CALLME_PORT` | `3333` | Server port |
+| `CALLME_TRANSCRIPT_TIMEOUT_MS` | `180000` | Max wait for user speech (3 min) |
+| `CALLME_STT_SILENCE_DURATION_MS` | `800` | Silence to detect end of speech |
+| `CALLME_TELNYX_PUBLIC_KEY` | - | Webhook signature verification |
 
 ---
 
 ## Troubleshooting
 
 ### Claude doesn't use the tool
-1. Check all required environment variables are set (ideally in `~/.claude/settings.json`)
-2. Restart Claude Code after installing the plugin
-3. Try explicitly: "Call me to discuss the next steps when you're done."
+1. Check environment variables are set in `~/.claude/settings.json`
+2. Restart Claude Code after adding the MCP server
+3. Try explicitly: "Call me when you're done"
 
 ### Call doesn't connect
-1. Check the MCP server logs (stderr) with `claude --debug`
-2. Verify your phone provider credentials are correct
-3. Make sure ngrok can create a tunnel
+1. Verify your Telnyx credentials
+2. Check webhook URL in Telnyx portal matches your server
+3. Ensure your phone number is verified
 
 ### Audio issues
-1. Ensure your phone number is verified with your provider
-2. Check that the webhook URL in your provider dashboard matches your ngrok URL
-
-### ngrok errors
-1. Verify your `CALLME_NGROK_AUTHTOKEN` is correct
-2. Check if you've hit ngrok's free tier limits
-3. Try a different port with `CALLME_PORT=3334`
+1. Confirm phone number verification in Telnyx
+2. Check TTS/STT API keys are valid
 
 ---
 
-## Cloud Deployment (Coolify/Railway)
-
-Instead of running locally with ngrok, you can deploy the server to the cloud for a more reliable setup.
-
-### 1. Deploy to Coolify
-
-1. Create a new service in Coolify pointing to this repo
-2. The **Dockerfile** is in the repo root (default location)
-3. Configure environment variables:
-
-```env
-# Required: Your deployment URL
-CALLME_PUBLIC_URL=https://callme.yourdomain.com
-
-# Phone provider (Telnyx)
-CALLME_PHONE_ACCOUNT_SID=<your-connection-id>
-CALLME_PHONE_AUTH_TOKEN=<your-api-key>
-CALLME_PHONE_NUMBER=+15551234567
-CALLME_USER_PHONE_NUMBER=+15559876543
-
-# TTS (LemonFox, OpenAI, or Deepgram)
-CALLME_TTS_API_KEY=<your-tts-api-key>
-CALLME_TTS_BASE_URL=https://api.lemonfox.ai/v1
-CALLME_TTS_VOICE=heart
-
-# STT (Deepgram)
-CALLME_STT_API_KEY=<your-deepgram-api-key>
-```
-
-4. **Network settings**:
-   - Ports Exposes: `3333`
-   - Domain: `callme.yourdomain.com`
-
-5. Update your phone provider webhook URL to `https://callme.yourdomain.com/twiml`
-
-### 2. Connect Claude Code
-
-```bash
-# Recommended: HTTP transport (Streamable HTTP)
-claude mcp add -s user --transport http solo-callme https://callme.yourdomain.com/mcp
-```
-
-This configures Claude Code globally to connect to your deployed server.
-
-> **Note**: SSE transport (`--transport sse`) is deprecated. Use HTTP transport for best compatibility.
-
-### Endpoints (all on single port)
+## Server Endpoints
 
 | Path | Purpose |
 |------|---------|
@@ -283,13 +233,6 @@ This configures Claude Code globally to connect to your deployed server.
 | `/media-stream` | WebSocket for audio |
 | `/health` | Health check |
 
-### Benefits of Cloud Deployment
-
-- **No ngrok required** - Direct public URL, no tunneling
-- **Always available** - Works from any Claude Code session
-- **Single port** - Simple Coolify configuration
-- **More reliable** - No ngrok free tier limitations
-
 ---
 
 ## Development
@@ -298,11 +241,11 @@ This configures Claude Code globally to connect to your deployed server.
 cd server
 bun install
 
-# Local mode (with ngrok)
-bun run dev
+# Local mode (requires ngrok)
+CALLME_NGROK_AUTHTOKEN=your-token bun run dev
 
-# SSE mode (for testing cloud deployment)
-bun run dev:sse
+# Cloud/SSE mode
+CALLME_PUBLIC_URL=https://your-url.com bun run dev:sse
 ```
 
 ---
@@ -310,3 +253,7 @@ bun run dev:sse
 ## License
 
 MIT
+
+---
+
+Built by [SoLoVisionLLC](https://github.com/SoLoVisionLLC)
