@@ -8,10 +8,10 @@
     "start:sse": "npm run start:sse --prefix server",
     "dev": "npm run dev --prefix server",
     "dev:sse": "npm run dev:sse --prefix server",
-    "release": "npm run release --prefix server",
-    "release:patch": "npm run release:patch --prefix server",
-    "release:minor": "npm run release:minor --prefix server",
-    "release:major": "npm run release:major --prefix server",
+    "release": "node scripts/release.js patch",
+    "release:patch": "node scripts/release.js patch",
+    "release:minor": "node scripts/release.js minor",
+    "release:major": "node scripts/release.js major",
     "install:server": "cd server && bun install"
   },
   "repository": {
