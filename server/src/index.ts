@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 /**
- * CallMe MCP Server
+ * SoLo-CallMe MCP Server
  *
  * A stdio-based MCP server that lets Claude call you on the phone.
  * Automatically starts ngrok to expose webhooks for phone providers.
@@ -44,7 +44,7 @@ async function main() {
 
   // Create stdio MCP server
   const mcpServer = new Server(
-    { name: 'callme', version: '3.0.0' },
+    { name: 'solo-callme', version: '3.0.0' },
     { capabilities: { tools: {} } }
   );
 

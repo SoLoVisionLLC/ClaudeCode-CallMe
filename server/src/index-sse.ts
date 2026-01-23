@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 /**
- * CallMe MCP Server - HTTP Transport (for cloud deployment)
+ * SoLo-CallMe MCP Server - HTTP Transport (for cloud deployment)
  *
  * Single unified HTTP server that handles:
  * - /mcp          -> MCP Streamable HTTP (protocol 2025-03-26) - RECOMMENDED
@@ -38,7 +38,7 @@ function log(message: string, data?: any) {
 
 function createMcpServer(callManager: CallManager): Server {
   const mcpServer = new Server(
-    { name: 'callme', version: '3.0.0' },
+    { name: 'solo-callme', version: '3.0.0' },
     { capabilities: { tools: {} } }
   );
 
