@@ -1,6 +1,6 @@
 {
   "name": "solo-callme-repo",
-  "version": "1.0.4",
+  "version": "1.0.6",
   "private": true,
   "description": "MCP server that lets Claude Code call you on the phone",
   "scripts": {
