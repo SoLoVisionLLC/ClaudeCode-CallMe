@@ -1,17 +1,17 @@
 {
-  "name": "callme",
-  "version": "1.0.2",
+  "name": "solo-callme",
+  "version": "1.0.3",
   "description": "Claude calls you on the phone when it needs your input or wants to report progress",
   "author": {
-    "name": "ZeframLou",
-    "url": "https://github.com/ZeframLou"
+    "name": "SoLoVisionLLC",
+    "url": "https://github.com/SoLoVisionLLC"
   },
-  "repository": "https://github.com/ZeframLou/call-me",
+  "repository": "https://github.com/SoLoVisionLLC/SoLo-CallMe",
   "license": "MIT",
   "keywords": ["phone", "voice", "calls", "input"],
   "skills": "./skills",
   "mcpServers": {
-    "callme": {
+    "solo-callme": {
       "command": "bun",
       "args": ["run", "--cwd", "${CLAUDE_PLUGIN_ROOT}/server", "start"],
       "env": {

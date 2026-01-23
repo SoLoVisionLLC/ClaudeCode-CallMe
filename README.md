@@ -1,4 +1,4 @@
-# CallMe
+# SoLo-CallMe
 
 **Minimal plugin that lets Claude Code call you on the phone.**
 
@@ -108,8 +108,7 @@ Add these to `~/.claude/settings.json` (recommended) or export them in your shel
 ### 4. Install Plugin
 
 ```bash
-/plugin marketplace add ZeframLou/call-me
-/plugin install callme@callme
+claude plugin install github:SoLoVisionLLC/SoLo-CallMe
 ```
 
 Restart Claude Code. Done!
@@ -267,7 +266,7 @@ CALLME_STT_API_KEY=<your-deepgram-api-key>
 
 ```bash
 # Recommended: HTTP transport (Streamable HTTP)
-claude mcp add -s user --transport http callme https://callme.yourdomain.com/mcp
+claude mcp add -s user --transport http solo-callme https://callme.yourdomain.com/mcp
 ```
 
 This configures Claude Code globally to connect to your deployed server.
