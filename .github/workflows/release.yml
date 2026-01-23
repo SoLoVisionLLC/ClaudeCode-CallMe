@@ -105,15 +105,3 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  trigger-coolify:
-    runs-on: ubuntu-latest
-    needs: docker-build
-    if: vars.COOLIFY_WEBHOOK_URL != ''
-
-    steps:
-      - name: Trigger Coolify Deployment
-        run: |
-          curl -X POST "${{ vars.COOLIFY_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            --fail --silent --show-error
-          echo "Coolify deployment triggered"

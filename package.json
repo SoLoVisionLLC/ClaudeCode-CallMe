@@ -1,0 +1,23 @@
+{
+  "name": "solo-callme-repo",
+  "version": "1.0.4",
+  "private": true,
+  "description": "MCP server that lets Claude Code call you on the phone",
+  "scripts": {
+    "start": "npm run start --prefix server",
+    "start:sse": "npm run start:sse --prefix server",
+    "dev": "npm run dev --prefix server",
+    "dev:sse": "npm run dev:sse --prefix server",
+    "release": "npm run release --prefix server",
+    "release:patch": "npm run release:patch --prefix server",
+    "release:minor": "npm run release:minor --prefix server",
+    "release:major": "npm run release:major --prefix server",
+    "install:server": "cd server && bun install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SoLoVisionLLC/SoLo-CallMe.git"
+  },
+  "author": "SoLoVisionLLC",
+  "license": "MIT"
+}
